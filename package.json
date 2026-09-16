@@ -1,0 +1,28 @@
+{
+  "name": "smart-url-intelligence-platform",
+  "version": "1.0.0",
+  "description": "Developer-first URL Shortening & Traffic Routing Engine MVP",
+  "main": "src/app.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "node --watch src/app.js",
+    "setup-db": "node scripts/setup-db.js",
+    "test": "node test/integration.js"
+  },
+  "keywords": [
+    "url-shortener",
+    "system-design",
+    "express",
+    "postgresql"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^8.7.0",
+    "pg": "^8.11.5",
+    "pino": "^10.3.1"
+  }
+}
