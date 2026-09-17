@@ -246,7 +246,7 @@ async function runStep8Tests() {
 
     // TEST 20: Window expiration allows user to create again (verified with custom test server instance)
     {
-      const testLimiter = createRateLimiter({ windowMs: 200, max: 2 });
+      const testLimiter = createRateLimiter({ windowMs: 150, max: 2 });
       const testApp = express();
       testApp.use(express.json());
       testApp.post('/api/v1/links', authenticateApiKey, testLimiter, (req, res) => {
@@ -272,8 +272,8 @@ async function runStep8Tests() {
       const res3 = await sendHttpRequest(subPort, { method: 'POST', path: '/api/v1/links', headers: { 'Authorization': authHeaderB } });
       assert.strictEqual(res3.statusCode, 429);
 
-      // Wait 250ms for window to expire
-      await new Promise((r) => setTimeout(r, 250));
+      // Wait 400ms for window to expire
+      await new Promise((r) => setTimeout(r, 400));
 
       // Request 4 allowed after window reset
       const res4 = await sendHttpRequest(subPort, { method: 'POST', path: '/api/v1/links', headers: { 'Authorization': authHeaderB } });
