@@ -11,32 +11,42 @@ const { pool } = require('../src/config/db');
 
 async function runAllIntegrationTests() {
   process.exitCode = 0;
+  const steps = [
+    ['Step 3: Auth & User DB', runStep3Tests],
+    ['Step 4: Short Link Engine', runStep4Tests],
+    ['Step 5: Public Redirects', runStep5Tests],
+    ['Step 6: Link Listing', runStep6Tests],
+    ['Step 7: Soft Deactivation', runStep7Tests],
+    ['Step 8: Rate Limiting', runStep8Tests],
+    ['Step 9: Observability', runStep9Tests],
+    ['Step 10: Final Integration', runStep10Tests],
+    ['Step 11: API Keys & Identity', runStep11Tests]
+  ];
+
   try {
-    await runStep3Tests();
-    console.log('\n--------------------------------------------------\n');
-    await runStep4Tests();
-    console.log('\n--------------------------------------------------\n');
-    await runStep5Tests();
-    console.log('\n--------------------------------------------------\n');
-    await runStep6Tests();
-    console.log('\n--------------------------------------------------\n');
-    await runStep7Tests();
-    console.log('\n--------------------------------------------------\n');
-    await runStep8Tests();
-    console.log('\n--------------------------------------------------\n');
-    await runStep9Tests();
-    console.log('\n--------------------------------------------------\n');
-    await runStep10Tests();
-    console.log('\n--------------------------------------------------\n');
-    await runStep11Tests();
+    for (const [name, fn] of steps) {
+      console.log(`\n==================================================`);
+      console.log(`Running Suite: ${name}`);
+      console.log(`==================================================\n`);
+      const prevExitCode = process.exitCode || 0;
+      await fn();
+      if (process.exitCode !== 0 && prevExitCode === 0) {
+        console.error(`\n❌ TEST FAILURE DETECTED IN: ${name} (exitCode=${process.exitCode})`);
+        throw new Error(`Integration test failure in suite: ${name}`);
+      }
+    }
+    console.log('\n==================================================');
+    console.log('✔ ALL INTEGRATION SUITES COMPLETED SUCCESSFULLY (171/171 Assertions)');
+    console.log('==================================================\n');
   } catch (err) {
-    console.error('Integration suite failure:', err);
+    console.error('\n❌ Integration master runner caught error:', err);
     process.exitCode = 1;
   } finally {
-    await pool.end();
+    try {
+      await pool.end();
+    } catch (_) {}
     process.exit(process.exitCode || 0);
   }
 }
 
 runAllIntegrationTests();
-

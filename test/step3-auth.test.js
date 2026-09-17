@@ -107,8 +107,8 @@ async function runStep3Tests() {
       assert.strictEqual(dbUser.user_id, testUser.user_id);
       assert.strictEqual(dbUser.api_key_hash, undefined, 'findUserByApiKeyHash returns only user_id and created_at');
 
-      // Direct query to verify stored value in users table is SHA-256 hash, not plaintext
-      const directQueryResult = await pool.query('SELECT * FROM users WHERE user_id = $1', [testUser.user_id]);
+      // Direct query to verify stored value in api_keys table is SHA-256 hash, not plaintext
+      const directQueryResult = await pool.query('SELECT * FROM api_keys WHERE user_id = $1', [testUser.user_id]);
       const rawDbRow = directQueryResult.rows[0];
       assert.strictEqual(rawDbRow.api_key_hash, testApiKeyHash, 'Stored DB value is the SHA-256 hash');
       assert.notStrictEqual(rawDbRow.api_key_hash, rawTestApiKey, 'Plaintext API key is NOT stored in DB');
