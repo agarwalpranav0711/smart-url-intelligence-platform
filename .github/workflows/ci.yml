@@ -41,12 +41,12 @@ jobs:
 
       - name: Setup PostgreSQL Schema & Database
         env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/url_shortener
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/url_shortener
         run: npm run setup-db
 
       - name: Run Integration Tests
         env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/url_shortener
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/url_shortener
         run: npm test
 
       - name: Security Vulnerability Audit
