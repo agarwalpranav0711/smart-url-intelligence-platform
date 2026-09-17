@@ -10,6 +10,9 @@ const metrics = {
   redirect_inactive_total: 0,
   deactivations_total: 0,
   rate_limit_exceeded_total: 0,
+  api_keys_created_total: 0,
+  api_keys_revoked_total: 0,
+  api_key_auth_failures_total: 0,
   http_4xx_total: 0,
   http_5xx_total: 0,
 };

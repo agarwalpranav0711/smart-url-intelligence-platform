@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const usersDb = require('../db/users');
+const { incrementMetric } = require('../utils/metrics');
 
 /**
  * Express Middleware: Authenticates API requests using Bearer API Key.
@@ -8,8 +9,8 @@ const usersDb = require('../db/users');
  * 1. Reads Authorization header.
  * 2. Validates Bearer authentication scheme.
  * 3. Hashes supplied API key using SHA-256.
- * 4. Queries PostgreSQL users table by api_key_hash.
- * 5. On success: Attaches minimal user identity { userId: user.user_id } to req.user and calls next().
+ * 4. Queries PostgreSQL for active matching key record (revoked_at IS NULL).
+ * 5. On success: Attaches user identity { userId: user.user_id } to req.user and calls next().
  * 6. On failure: Returns HTTP 401 with structured JSON error.
  */
 async function authenticateApiKey(req, res, next) {
@@ -17,6 +18,7 @@ async function authenticateApiKey(req, res, next) {
 
   // 1. Verify Authorization header exists and uses Bearer scheme
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    incrementMetric('api_key_auth_failures_total');
     return res.status(401).json({
       error: {
         code: 'UNAUTHORIZED',
@@ -29,6 +31,7 @@ async function authenticateApiKey(req, res, next) {
   const rawApiKey = authHeader.substring(7).trim();
 
   if (!rawApiKey) {
+    incrementMetric('api_key_auth_failures_total');
     return res.status(401).json({
       error: {
         code: 'UNAUTHORIZED',
@@ -44,11 +47,12 @@ async function authenticateApiKey(req, res, next) {
       .update(rawApiKey)
       .digest('hex');
 
-    // 4. Query PostgreSQL database for matching user
+    // 4. Query PostgreSQL database for active matching user key
     const user = await usersDb.findUserByApiKeyHash(apiKeyHash);
 
     if (!user) {
-      // Security: Do not reveal whether API key format was correct or key existed
+      incrementMetric('api_key_auth_failures_total');
+      // Security: Do not reveal whether key existed or was revoked
       return res.status(401).json({
         error: {
           code: 'UNAUTHORIZED',
@@ -57,7 +61,7 @@ async function authenticateApiKey(req, res, next) {
       });
     }
 
-    // 5. Attach minimal user identity to request object
+    // 5. Attach user identity to request object
     req.user = {
       userId: user.user_id
     };

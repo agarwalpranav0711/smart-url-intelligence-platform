@@ -2,6 +2,7 @@ const express = require('express');
 const linkRoutes = require('./routes/linkRoutes');
 const redirectRoutes = require('./routes/redirectRoutes');
 const opsRoutes = require('./routes/opsRoutes');
+const apiKeyRoutes = require('./routes/apiKeyRoutes');
 const requestLogger = require('./middleware/requestLogger');
 const logger = require('./utils/logger');
 
@@ -22,7 +23,8 @@ app.use('/', opsRoutes);
 // 4. Register Public Redirect Route (GET /s/:code)
 app.use('/', redirectRoutes);
 
-// 5. Register Authenticated API Routes (POST /api/v1/links, GET /api/v1/links, DELETE /api/v1/links/:code)
+// 5. Register Authenticated API Routes & Developer Identity Endpoints
+app.use('/api/v1', apiKeyRoutes);
 app.use('/api/v1', linkRoutes);
 
 // 6. Unknown Route Handler (HTTP 404 JSON response for any unmapped route)

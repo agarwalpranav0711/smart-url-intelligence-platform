@@ -6,9 +6,11 @@ const runStep7Tests = require('./step7-deactivate.test');
 const runStep8Tests = require('./step8-rate-limit.test');
 const runStep9Tests = require('./step9-observability.test');
 const runStep10Tests = require('./step10-final.test');
+const runStep11Tests = require('./step11-api-key-management.test');
 const { pool } = require('../src/config/db');
 
 async function runAllIntegrationTests() {
+  process.exitCode = 0;
   try {
     await runStep3Tests();
     console.log('\n--------------------------------------------------\n');
@@ -25,11 +27,14 @@ async function runAllIntegrationTests() {
     await runStep9Tests();
     console.log('\n--------------------------------------------------\n');
     await runStep10Tests();
+    console.log('\n--------------------------------------------------\n');
+    await runStep11Tests();
   } catch (err) {
     console.error('Integration suite failure:', err);
     process.exitCode = 1;
   } finally {
     await pool.end();
+    process.exit(process.exitCode || 0);
   }
 }
 

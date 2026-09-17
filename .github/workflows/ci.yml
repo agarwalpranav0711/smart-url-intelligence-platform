@@ -1,0 +1,56 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test-and-build:
+    name: Test & Build Docker Image
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: url_shortener
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup PostgreSQL Schema & Database
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/url_shortener
+        run: npm run setup-db
+
+      - name: Run Integration Tests
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/url_shortener
+        run: npm test
+
+      - name: Security Vulnerability Audit
+        run: npm audit
+
+      - name: Build Docker Image
+        run: docker build -t tinyurl-app:latest .

@@ -61,6 +61,7 @@ Database Tier (PostgreSQL 16)
 ### Operational & Public Endpoints
 | Method | Endpoint | Auth Required | Description |
 | :--- | :--- | :---: | :--- |
+| `POST` | `/api/v1/users` | No | Developer account registration & initial API key provisioning. |
 | `GET` | `/health` | No | Database reachability & application health status. |
 | `GET` | `/metrics` | No | Returns process-local operational metrics snapshot. |
 | `GET` | `/s/:code` | No | Public short code redirect (`HTTP 302`). |
@@ -68,6 +69,9 @@ Database Tier (PostgreSQL 16)
 ### Authenticated Management Endpoints (v1)
 | Method | Endpoint | Auth Required | Description |
 | :--- | :--- | :---: | :--- |
+| `POST` | `/api/v1/api-keys` | Yes (`Bearer`) | Provision a secondary API key for rotation/multi-environment. |
+| `GET` | `/api/v1/api-keys` | Yes (`Bearer`) | List developer's API keys (without raw keys/hashes). |
+| `DELETE` | `/api/v1/api-keys/:id` | Yes (`Bearer`) | Soft-revoke an API key owned by the developer. |
 | `POST` | `/api/v1/links` | Yes (`Bearer`) | Create a new short link for the authenticated user. |
 | `GET` | `/api/v1/links` | Yes (`Bearer`) | Paginated listing of short links owned by user. |
 | `DELETE` | `/api/v1/links/:code` | Yes (`Bearer`) | Soft-deactivate a short link owned by user. |
@@ -375,12 +379,35 @@ cp .env.example .env
 
 ## 17. Running the Application
 
-### Development Mode (with hot-reload):
+### Option A: Running via Docker Compose (Recommended)
+
+Start the Node application and PostgreSQL database with a single command:
+
+```bash
+# Build images and start containers in detached mode
+docker compose up --build -d
+
+# Check status of running containers
+docker compose ps
+
+# View application logs
+docker compose logs -f app
+
+# Stop containers (preserves database volume)
+docker compose down
+
+# Stop containers and reset database volume (Destructive Reset)
+docker compose down -v
+```
+
+### Option B: Running Natively on Host System
+
+#### Development Mode (with hot-reload):
 ```bash
 npm run dev
 ```
 
-### Production Mode:
+#### Production Mode:
 ```bash
 npm start
 ```
@@ -441,12 +468,32 @@ Potential post-MVP enhancements:
 
 ## 23. Testing Status
 
-* **Total Integration Assertions**: 149/149 Passed
+* **Total Integration Assertions**: 171/171 Passed
 * **Vulnerability Audit (`npm audit`)**: 0 Vulnerabilities
-* **Code Coverage**: Covers Auth, Link Creation, Redirects, Listing, Soft Deactivation, Rate Limiting, Observability, and Error Handling.
+* **Code Coverage**: Covers Developer Registration, API-Key Auth, Key Rotation & Revocation, Link Creation, Redirects, Listing, Soft Deactivation, Rate Limiting, Observability, and Error Handling.
 
 ---
 
-## 24. License
+## 24. CI/CD Pipeline (GitHub Actions)
+
+The project includes an automated Continuous Integration (CI) pipeline configured in [`.github/workflows/ci.yml`](file:///d:/WebDev%20PROJECTS/tiny%20url/.github/workflows/ci.yml).
+
+### Workflow Triggers:
+* Automated execution on every `push` to `main`/`master`.
+* Automated execution on every `pull_request` targeting `main`/`master`.
+
+### Automated Pipeline Jobs:
+1. **Repository Checkout**: Pulls clean source code via `actions/checkout@v4`.
+2. **Node.js 22 Runtime Setup**: Configures Node.js 22 with `actions/setup-node@v4` and enables dependency caching.
+3. **Dependency Installation**: Runs `npm ci` for deterministic dependency resolution.
+4. **Ephemeral Database Provisioning**: Spawns an isolated `postgres:16-alpine` service container with health checks (`pg_isready`).
+5. **Schema Migration & Verification**: Executes `npm run setup-db` against the CI database.
+6. **Integration Test Suite**: Runs `npm test` verifying all 171 assertions against the live PostgreSQL container.
+7. **Security Vulnerability Audit**: Runs `npm audit` to detect dependency vulnerabilities.
+8. **Docker Build Verification**: Compiles `Dockerfile` (`docker build -t tinyurl-app:latest .`) to verify production container buildability without publishing or deploying.
+
+---
+
+## 25. License
 
 A formal license has not yet been selected for this project. All rights reserved by the repository owner.
