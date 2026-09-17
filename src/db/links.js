@@ -1,4 +1,6 @@
 const { query } = require('../config/db');
+const { linkCache } = require('../utils/cache');
+
 
 /**
  * Inserts a new short link into PostgreSQL.
@@ -114,8 +116,9 @@ async function incrementClickCount(shortCode) {
 }
 
 /**
+
  * Sets the is_active status of a link by short_code.
- * Used for testing inactive links.
+ * Used for testing inactive links. Invalidates cache entry.
  *
  * @param {string} shortCode - 6-character short code
  * @param {boolean} isActive - New active status
@@ -128,12 +131,13 @@ async function setLinkActiveStatus(shortCode, isActive) {
     WHERE short_code = $1
   `;
   const result = await query(sql, [shortCode, isActive]);
+  linkCache.del(shortCode);
   return result.rowCount > 0;
 }
 
 /**
  * Deletes a link record by short_code.
- * Used ONLY for test cleanup.
+ * Used ONLY for test cleanup. Invalidates cache entry.
  *
  * @param {string} shortCode - 6-character short code
  * @returns {Promise<boolean>} True if deleted, false otherwise
@@ -141,8 +145,10 @@ async function setLinkActiveStatus(shortCode, isActive) {
 async function deleteLinkByShortCode(shortCode) {
   const sql = `DELETE FROM links WHERE short_code = $1`;
   const result = await query(sql, [shortCode]);
+  linkCache.del(shortCode);
   return result.rowCount > 0;
 }
+
 
 module.exports = {
   createLink,

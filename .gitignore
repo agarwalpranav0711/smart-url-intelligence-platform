@@ -11,6 +11,8 @@ npm-debug.log*
 *.log
 coverage/
 scratch/
+load-tests/test-config.json
+
 
 # OS-generated files
 .DS_Store

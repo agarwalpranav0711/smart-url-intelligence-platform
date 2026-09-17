@@ -494,6 +494,73 @@ The project includes an automated Continuous Integration (CI) pipeline configure
 
 ---
 
-## 25. License
+## 25. Load Testing & Performance Baselining (Step 14)
+
+The project includes a reproducible, containerized load-testing suite using [Grafana k6](https://k6.io/) to measure baseline system throughput, latency percentiles, and rate-limiting behavior under load.
+
+> ⚠️ **IMPORTANT**: Load tests must ONLY be executed against local development or dedicated staging environments. Load-test API keys and generated credentials are stored in git-ignored local configuration files (`.env.test`, `load-tests/test-config.json`) and must NEVER be committed to source control.
+
+### Setup Instructions
+
+1. **Start Local Stack**:
+   ```bash
+   docker compose up -d
+   ```
+
+2. **Provision Test Data**:
+   ```bash
+   node scripts/setup-load-test-data.js
+   ```
+
+3. **Execute Benchmark Scenarios**:
+
+   * **Test A — Redirect Read Load** (`GET /s/:code`):
+     ```bash
+     docker run --rm -v "${PWD}/load-tests:/load-tests" --add-host=host.docker.internal:host-gateway grafana/k6 run /load-tests/redirect.js
+     ```
+   * **Test B — Link Creation Write Load** (`POST /api/v1/links`):
+     ```bash
+     docker run --rm -v "${PWD}/load-tests:/load-tests" --add-host=host.docker.internal:host-gateway grafana/k6 run /load-tests/create.js
+     ```
+   * **Test C — Mixed Workload** (100 Redirects : 1 Link Creation):
+     ```bash
+     docker run --rm -v "${PWD}/load-tests:/load-tests" --add-host=host.docker.internal:host-gateway grafana/k6 run /load-tests/mixed.js
+     ```
+   * **Test D — Sustained Moderate Load** (60s steady 30 VUs):
+     ```bash
+     docker run --rm -v "${PWD}/load-tests:/load-tests" --add-host=host.docker.internal:host-gateway grafana/k6 run /load-tests/sustained.js
+     ```
+   * **Test E — Rate Limit Validation** (75 rapid POSTs for single user identity):
+     ```bash
+     docker run --rm -v "${PWD}/load-tests:/load-tests" --add-host=host.docker.internal:host-gateway grafana/k6 run /load-tests/rate-limit.js
+     ```
+
+For detailed educational concepts, percentile explanations, and baseline report data, see [`step_14_load_testing.md`](file:///d:/WebDev%20PROJECTS/tiny%20url/step_14_load_testing.md).
+
+---
+
+## 26. Performance Engineering & Caching (Step 15)
+
+Step 15 introduced evidence-based performance optimizations for the read path (`GET /s/:code`) without changing API contracts or compromising database durability.
+
+### Key Performance Gains
+
+* **Redirect Throughput (RPS)**: Increased from **888.85 req/sec** to **2,649.03 req/sec** (**+198% / 3.0x increase**).
+* **Redirect Latency (p50)**: Reduced from **39.22 ms** to **14.73 ms** (**62.4% faster**).
+* **Redirect Tail Latency (p99)**: Reduced from **145.02 ms** to **42.58 ms** (**70.6% faster**, satisfying the P99 < 50ms design target).
+* **Create Tail Latency (p99)**: Reduced from **187.73 ms** to **16.82 ms** (**91.0% faster**).
+
+### Architectural Optimizations
+* **Bounded In-Memory LRU Cache** ([`src/utils/cache.js`](file:///d:/WebDev%20PROJECTS/tiny%20url/src/utils/cache.js)): Eliminates database query overhead for cached short links.
+* **Immediate Cache Eviction**: Link deactivation (`DELETE /api/v1/links/:code`) purges cache entries immediately to prevent stale redirects.
+* **PostgreSQL Source of Truth**: On cache miss or cache exception, execution falls back transparently to PostgreSQL.
+
+For full bottleneck profiling and before/after benchmark comparisons, see [`step_15_performance_engineering.md`](file:///d:/WebDev%20PROJECTS/tiny%20url/step_15_performance_engineering.md).
+
+---
+
+## 27. License
 
 A formal license has not yet been selected for this project. All rights reserved by the repository owner.
+
+

@@ -1,7 +1,9 @@
 const { generateShortCode } = require('../utils/base62');
 const linksDb = require('../db/links');
+const { linkCache } = require('../utils/cache');
 
 const MAX_INSERT_ATTEMPTS = 3;
+
 const PG_UNIQUE_VIOLATION_CODE = '23505';
 
 /**
@@ -45,13 +47,24 @@ async function createShortLink(targetUrl, userId) {
 }
 
 /**
- * Retrieves a link record by short_code from PostgreSQL database.
+
+ * Retrieves a link record by short_code from cache or PostgreSQL database.
+ * Falls back transparently to PostgreSQL on cache miss or cache failure.
  *
  * @param {string} shortCode - 6-character short code
  * @returns {Promise<Object|null>} Link record or null if not found
  */
 async function getLinkByCode(shortCode) {
-  return await linksDb.getLinkByShortCode(shortCode);
+  const cached = linkCache.get(shortCode);
+  if (cached !== null) {
+    return cached;
+  }
+
+  const link = await linksDb.getLinkByShortCode(shortCode);
+  if (link) {
+    linkCache.set(shortCode, link);
+  }
+  return link;
 }
 
 /**
@@ -68,14 +81,19 @@ async function getUserLinks(userId, limit, offset) {
 
 /**
  * Soft-deactivates a link belonging to the authenticated user.
+ * Invalidates the cached entry immediately to prevent stale redirects.
  *
  * @param {string} shortCode - 6-character short code
  * @param {string} userId - UUID of authenticated owner
  * @returns {Promise<Object>} Result object with status
  */
 async function deactivateLink(shortCode, userId) {
-  return await linksDb.deactivateUserLink(shortCode, userId);
+  const result = await linksDb.deactivateUserLink(shortCode, userId);
+  // Invalidate cache immediately on deactivation
+  linkCache.del(shortCode);
+  return result;
 }
+
 
 /**
  * Triggers a best-effort atomic click count increment.
