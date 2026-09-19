@@ -64,6 +64,7 @@ Database Tier (PostgreSQL 16)
 | `POST` | `/api/v1/users` | No | Developer account registration & initial API key provisioning. |
 | `GET` | `/health` | No | Database reachability & application health status. |
 | `GET` | `/metrics` | No | Returns process-local operational metrics snapshot. |
+| `GET` | `/docs` | No | Interactive Swagger UI API documentation. |
 | `GET` | `/s/:code` | No | Public short code redirect (`HTTP 302`). |
 
 ### Authenticated Management Endpoints (v1)
@@ -592,10 +593,186 @@ For full query audits and EXPLAIN ANALYZE reports, see [`step_17_api_database_sc
 
 ---
 
-## 29. License
+## 29. API Quality, Documentation & Developer Experience (Step 18)
+
+Step 18 established complete OpenAPI 3.0 documentation, interactive Swagger UI API reference, standardized error contracts, and copy-pasteable developer cURL workflows.
+
+### 29.1 OpenAPI 3.0 Specification & Swagger UI
+
+* **OpenAPI 3.0 Spec**: Available at [`docs/openapi.yaml`](file:///d:/WebDev%20PROJECTS/tiny%20url/docs/openapi.yaml) or served directly via `GET /docs/openapi.yaml` and `GET /docs/openapi.json`.
+* **Interactive Swagger UI**: Accessible at `http://localhost:3000/docs` when the service is running. Allows zero-setup API testing directly from the browser.
+
+---
+
+### 29.2 End-to-End Developer Workflows (cURL Examples)
+
+All requests assume local environment base URL `http://localhost:3000`.
+
+#### A. Register Developer Account & Generate Primary API Key
+```bash
+curl -X POST http://localhost:3000/api/v1/users \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Initial Key"}'
+```
+**Expected Response (`HTTP 201 Created`)**:
+```json
+{
+  "user_id": "1b9154d2-72e5-4514-8f9b-af5faf3cee56",
+  "key_id": "41a3477a-af91-4977-b929-5ce0a91ad44f",
+  "name": "Initial Key",
+  "api_key": "sk_live_EXAMPLE_KEY_11111111111111111111111111111111",
+  "created_at": "2026-09-19T10:00:00.000Z"
+}
+```
+
+---
+
+#### B. Create Secondary API Key (Key Rotation)
+```bash
+curl -X POST http://localhost:3000/api/v1/api-keys \
+  -H "Authorization: Bearer sk_live_EXAMPLE_KEY_11111111111111111111111111111111" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Secondary Automation Key"}'
+```
+**Expected Response (`HTTP 201 Created`)**:
+```json
+{
+  "key_id": "41a3477a-af91-4977-b929-5ce0a91ad44f",
+  "name": "Secondary Automation Key",
+  "api_key": "sk_live_EXAMPLE_KEY_22222222222222222222222222222222",
+  "created_at": "2026-09-19T10:05:00.000Z"
+}
+```
+
+---
+
+#### C. Create Short URL
+```bash
+curl -X POST http://localhost:3000/api/v1/links \
+  -H "Authorization: Bearer sk_live_EXAMPLE_KEY_11111111111111111111111111111111" \
+  -H "Content-Type: application/json" \
+  -d '{"target_url": "https://example.com/docs/developer-guide"}'
+```
+**Expected Response (`HTTP 201 Created`)**:
+```json
+{
+  "short_code": "gMAlt4",
+  "target_url": "https://example.com/docs/developer-guide",
+  "created_at": "2026-09-19T10:10:00.000Z"
+}
+```
+
+---
+
+#### D. List User Links (Paginated)
+```bash
+curl -X GET "http://localhost:3000/api/v1/links?limit=20&offset=0" \
+  -H "Authorization: Bearer sk_live_EXAMPLE_KEY_11111111111111111111111111111111"
+```
+**Expected Response (`HTTP 200 OK`)**:
+```json
+{
+  "links": [
+    {
+      "short_code": "gMAlt4",
+      "target_url": "https://example.com/docs/developer-guide",
+      "click_count": 42,
+      "is_active": true,
+      "created_at": "2026-09-19T10:10:00.000Z"
+    }
+  ],
+  "limit": 20,
+  "offset": 0
+}
+```
+
+---
+
+#### E. Soft-Deactivate Short Link
+```bash
+curl -X DELETE http://localhost:3000/api/v1/links/gMAlt4 \
+  -H "Authorization: Bearer sk_live_EXAMPLE_KEY_11111111111111111111111111111111"
+```
+**Expected Response (`HTTP 200 OK`)**:
+```json
+{
+  "message": "Link deactivated"
+}
+```
+
+---
+
+#### F. Public Short URL 302 Redirect
+```bash
+curl -i -X GET http://localhost:3000/s/gMAlt4
+```
+**Expected Response (`HTTP 302 Found` for active link)**:
+```http
+HTTP/1.1 302 Found
+Location: https://example.com/docs/developer-guide
+```
+
+**Expected Response (`HTTP 410 Gone` for deactivated link)**:
+```json
+{
+  "error": {
+    "code": "LINK_INACTIVE",
+    "message": "Short link is inactive"
+  }
+}
+```
+
+---
+
+#### G. List API Keys & Revoke Secondary API Key
+```bash
+# List API Keys
+curl -X GET http://localhost:3000/api/v1/api-keys \
+  -H "Authorization: Bearer sk_live_EXAMPLE_KEY_11111111111111111111111111111111"
+
+# Revoke API Key
+curl -X DELETE http://localhost:3000/api/v1/api-keys/41a3477a-af91-4977-b929-5ce0a91ad44f \
+  -H "Authorization: Bearer sk_live_EXAMPLE_KEY_11111111111111111111111111111111"
+```
+**Expected Response for Revoke (`HTTP 200 OK`)**:
+```json
+{
+  "message": "API key revoked successfully"
+}
+```
+
+---
+
+### 29.3 Standardized Error Envelopes
+
+All API errors return a consistent JSON response structure:
+
+```json
+{
+  "error": {
+    "code": "ERROR_CODE_NAME",
+    "message": "Human-readable description of error condition"
+  }
+}
+```
+
+#### Implemented HTTP Error Codes:
+
+| Status Code | Error Code | Example Trigger Condition | Response Body |
+| :--- | :--- | :--- | :--- |
+| **`400 Bad Request`** | `INVALID_REQUEST` | Missing target URL or invalid payload | `{"error":{"code":"INVALID_REQUEST","message":"target_url must be a non-empty string"}}` |
+| **`401 Unauthorized`** | `UNAUTHORIZED` | Missing, malformed, or revoked API key | `{"error":{"code":"UNAUTHORIZED","message":"Authentication required"}}` |
+| **`404 Not Found`** | `NOT_FOUND` | Non-existent short code, key ID, or route | `{"error":{"code":"NOT_FOUND","message":"Short link not found"}}` |
+| **`410 Gone`** | `LINK_INACTIVE` | Redirect attempt on soft-deactivated link | `{"error":{"code":"LINK_INACTIVE","message":"Short link is inactive"}}` |
+| **`429 Rate Limited`** | `RATE_LIMIT_EXCEEDED` | Exceeding 60 link creations / min / user | `{"error":{"code":"RATE_LIMIT_EXCEEDED","message":"Too many link creation requests"}}` |
+| **`500 Internal Error`** | `INTERNAL_SERVER_ERROR` | Unexpected application exception | `{"error":{"code":"INTERNAL_SERVER_ERROR","message":"Internal server error"}}` |
+| **`503 Unavailable`** | `unhealthy` status | Database connection lost (`GET /health`) | `{"status":"unhealthy"}` |
+
+---
+
+## 30. License
 
 A formal license has not yet been selected for this project. All rights reserved by the repository owner.
-
 
 
 

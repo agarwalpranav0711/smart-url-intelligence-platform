@@ -8,6 +8,7 @@ const runStep9Tests = require('./step9-observability.test');
 const runStep10Tests = require('./step10-final.test');
 const runStep11Tests = require('./step11-api-key-management.test');
 const { runStep16ReliabilityTests } = require('./step16-reliability.test');
+const { runStep18ApiQualityTests } = require('./step18-api-quality.test');
 const { pool } = require('../src/config/db');
 
 async function runAllIntegrationTests() {
@@ -22,7 +23,8 @@ async function runAllIntegrationTests() {
     ['Step 9: Observability', runStep9Tests],
     ['Step 10: Final Integration', runStep10Tests],
     ['Step 11: API Keys & Identity', runStep11Tests],
-    ['Step 16: Reliability & Failure Mode', runStep16ReliabilityTests]
+    ['Step 16: Reliability & Failure Mode', runStep16ReliabilityTests],
+    ['Step 18: API Quality & Documentation', runStep18ApiQualityTests]
   ];
 
   try {
@@ -38,7 +40,7 @@ async function runAllIntegrationTests() {
       }
     }
     console.log('\n==================================================');
-    console.log('✔ ALL INTEGRATION SUITES COMPLETED SUCCESSFULLY (176/176 Assertions)');
+    console.log('✔ ALL INTEGRATION SUITES COMPLETED SUCCESSFULLY (195/195 Assertions)');
     console.log('==================================================\n');
 
   } catch (err) {

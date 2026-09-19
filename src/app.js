@@ -3,6 +3,7 @@ const linkRoutes = require('./routes/linkRoutes');
 const redirectRoutes = require('./routes/redirectRoutes');
 const opsRoutes = require('./routes/opsRoutes');
 const apiKeyRoutes = require('./routes/apiKeyRoutes');
+const docsRoutes = require('./routes/docsRoutes');
 const requestLogger = require('./middleware/requestLogger');
 const logger = require('./utils/logger');
 
@@ -17,8 +18,9 @@ app.use(requestLogger);
 // 2. Enable JSON body parsing
 app.use(express.json());
 
-// 3. Register Public Operational Routes (GET /health, GET /metrics)
+// 3. Register Public Operational & Documentation Routes
 app.use('/', opsRoutes);
+app.use('/', docsRoutes);
 
 // 4. Register Public Redirect Route (GET /s/:code)
 app.use('/', redirectRoutes);

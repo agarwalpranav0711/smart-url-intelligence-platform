@@ -1,0 +1,510 @@
+openapi: 3.0.3
+info:
+  title: Smart URL Intelligence Platform API
+  description: >
+    Developer-first HTTP URL shortening, traffic routing, and analytics engine MVP.
+    Built with Node.js 22, Express, and PostgreSQL 16. Features cryptographically secure
+    Base62 short codes, atomic click tracking, Bearer API-key authentication, key rotation,
+    rate limiting, and process-local LRU caching.
+  version: 1.0.0
+contact:
+  name: Developer Platform Support
+servers:
+  - url: http://localhost:3000
+    description: Local Development / Docker Server
+
+tags:
+  - name: Auth & Developer Identity
+    description: Developer registration, API key generation, listing, and revocation.
+  - name: Link Management
+    description: Short link creation, paginated listing, and soft-deactivation.
+  - name: Public Redirect Engine
+    description: High-throughput 302 HTTP redirects.
+  - name: Operational & Health
+    description: System health status and process-local metric counters.
+
+paths:
+  /api/v1/users:
+    post:
+      tags:
+        - Auth & Developer Identity
+      summary: Register Developer Account & Generate Primary API Key
+      description: >
+        Bootstrap endpoint for developers. Creates a user identity record and returns
+        the primary raw API key. Raw API keys are returned ONLY ONCE upon creation and are
+        never stored in plaintext or returned in listing endpoints.
+      operationId: registerDeveloper
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  maxLength: 100
+                  default: Initial Key
+                  example: Primary Development Key
+      responses:
+        '201':
+          description: Developer account and primary API key created successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user_id:
+                    type: string
+                    format: uuid
+                    example: 1b9154d2-72e5-4514-8f9b-af5faf3cee56
+                  key_id:
+                    type: string
+                    format: uuid
+                    example: 41a3477a-af91-4977-b929-5ce0a91ad44f
+                  name:
+                    type: string
+                    example: Initial Key
+                  api_key:
+                    type: string
+                    example: sk_live_EXAMPLE_KEY_11111111111111111111111111111111
+                  created_at:
+                    type: string
+                    format: date-time
+                    example: '2026-09-19T10:00:00.000Z'
+        '500':
+          $ref: '#/components/responses/500InternalError'
+
+  /api/v1/api-keys:
+    post:
+      tags:
+        - Auth & Developer Identity
+      summary: Create Secondary API Key (Key Rotation)
+      description: Generates a new API key for the authenticated user to support zero-downtime key rotation.
+      operationId: createApiKey
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  maxLength: 100
+                  default: Secondary Key
+                  example: Secondary Automation Key
+      responses:
+        '201':
+          description: Secondary API key generated successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key_id:
+                    type: string
+                    format: uuid
+                    example: 41a3477a-af91-4977-b929-5ce0a91ad44f
+                  name:
+                    type: string
+                    example: Secondary Key
+                  api_key:
+                    type: string
+                    example: sk_live_EXAMPLE_KEY_22222222222222222222222222222222
+                  created_at:
+                    type: string
+                    format: date-time
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+        '500':
+          $ref: '#/components/responses/500InternalError'
+
+    get:
+      tags:
+        - Auth & Developer Identity
+      summary: List API Keys
+      description: Returns metadata for all API keys owned by the authenticated developer. Raw keys and hashes are never exposed.
+      operationId: listApiKeys
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of developer API keys.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  api_keys:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key_id:
+                          type: string
+                          format: uuid
+                        name:
+                          type: string
+                        created_at:
+                          type: string
+                          format: date-time
+                        revoked_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+        '500':
+          $ref: '#/components/responses/500InternalError'
+
+  /api/v1/api-keys/{id}:
+    delete:
+      tags:
+        - Auth & Developer Identity
+      summary: Revoke API Key
+      description: Soft-revokes a specific API key owned by the developer (`revoked_at = NOW()`). Revoked keys immediately fail authentication.
+      operationId: revokeApiKey
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: UUID of the API key to revoke
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: API key revoked successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: API key revoked successfully
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+        '404':
+          description: API key not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+                example:
+                  error:
+                    code: NOT_FOUND
+                    message: API key not found
+        '500':
+          $ref: '#/components/responses/500InternalError'
+
+  /api/v1/links:
+    post:
+      tags:
+        - Link Management
+      summary: Create Short Link
+      description: >
+        Generates a 6-character Base62 short code mapped to the target URL.
+        Rate limited to 60 creations per minute per authenticated user.
+      operationId: createLink
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - target_url
+              properties:
+                target_url:
+                  type: string
+                  format: uri
+                  maxLength: 2048
+                  example: https://example.com/docs/developer-guide
+      responses:
+        '201':
+          description: Short link created successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  short_code:
+                    type: string
+                    example: gMAlt4
+                  target_url:
+                    type: string
+                    example: https://example.com/docs/developer-guide
+                  created_at:
+                    type: string
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+        '429':
+          $ref: '#/components/responses/429RateLimited'
+        '500':
+          $ref: '#/components/responses/500InternalError'
+
+    get:
+      tags:
+        - Link Management
+      summary: List User Links (Paginated)
+      description: Returns a paginated array of short links created by the authenticated developer, ordered by creation date descending.
+      operationId: listLinks
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of links to return (1 to 100, default 20)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          description: Number of links to skip (default 0)
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Paginated link records.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  links:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        short_code:
+                          type: string
+                        target_url:
+                          type: string
+                        click_count:
+                          type: integer
+                        is_active:
+                          type: boolean
+                        created_at:
+                          type: string
+                          format: date-time
+                  limit:
+                    type: integer
+                    example: 20
+                  offset:
+                    type: integer
+                    example: 0
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+        '500':
+          $ref: '#/components/responses/500InternalError'
+
+  /api/v1/links/{code}:
+    delete:
+      tags:
+        - Link Management
+      summary: Soft-Deactivate Short Link
+      description: Marks short link as inactive (`is_active = false`). Preserves historical row while serving HTTP 410 Gone on subsequent redirect attempts.
+      operationId: deactivateLink
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: code
+          in: path
+          required: true
+          description: 6-character Base62 short code
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Link soft-deactivated successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Link deactivated
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+        '404':
+          $ref: '#/components/responses/404NotFound'
+        '500':
+          $ref: '#/components/responses/500InternalError'
+
+  /s/{code}:
+    get:
+      tags:
+        - Public Redirect Engine
+      summary: Public Short URL 302 Redirect
+      description: >
+        Resolves short code to target URL and issues an HTTP 302 Found redirect with non-blocking atomic click tracking.
+        Cached in process-local LRU memory for sub-millisecond redirect response times.
+      operationId: redirectLink
+      parameters:
+        - name: code
+          in: path
+          required: true
+          description: 6-character short code
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Redirect Found. Location header contains original target URL.
+          headers:
+            Location:
+              description: Original destination URL
+              schema:
+                type: string
+        '404':
+          $ref: '#/components/responses/404NotFound'
+        '410':
+          description: Short link has been deactivated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+                example:
+                  error:
+                    code: LINK_INACTIVE
+                    message: Short link is inactive
+        '500':
+          $ref: '#/components/responses/500InternalError'
+
+  /health:
+    get:
+      tags:
+        - Operational & Health
+      summary: System & Database Health Check
+      description: Verifies Express server status and PostgreSQL database connection pool responsiveness.
+      operationId: healthCheck
+      responses:
+        '200':
+          description: System and database are fully healthy.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+        '503':
+          description: Database connection failed or unhealthy.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: unhealthy
+
+  /metrics:
+    get:
+      tags:
+        - Operational & Health
+      summary: Process-Local Metrics Snapshot
+      description: Returns operational counters (redirects_total, link_creations_total, rate_limit_exceeded_total).
+      operationId: getMetrics
+      responses:
+        '200':
+          description: Operational metric counters.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: integer
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: sk_live_<hex>
+      description: Authenticate using your raw API key in the Authorization header (`Authorization: Bearer sk_live_...`).
+
+  schemas:
+    ErrorEnvelope:
+      type: object
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              example: INVALID_REQUEST
+            message:
+              type: string
+              example: Invalid target_url
+
+  responses:
+    400BadRequest:
+      description: Malformed JSON or invalid parameter validation error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    401Unauthorized:
+      description: Missing, revoked, or invalid Bearer API key token.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+            example:
+              error:
+                code: UNAUTHORIZED
+                message: Authentication required
+    404NotFound:
+      description: Requested short code, API key, or route not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+            example:
+              error:
+                code: NOT_FOUND
+                message: Short link not found
+    429RateLimited:
+      description: Rate limit exceeded (60 creations/minute limit reached).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+            example:
+              error:
+                code: RATE_LIMIT_EXCEEDED
+                message: Too many link creation requests
+    500InternalError:
+      description: Unexpected server failure or database error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+            example:
+              error:
+                code: INTERNAL_SERVER_ERROR
+                message: Internal server error
