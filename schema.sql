@@ -29,7 +29,8 @@ CREATE TABLE links (
     click_count BIGINT NOT NULL DEFAULT 0,
     is_active BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    expires_at TIMESTAMPTZ DEFAULT NULL
+    expires_at TIMESTAMPTZ DEFAULT NULL,
+    routing_config JSONB DEFAULT NULL
 );
 
 -- Indexes for fast query resolution

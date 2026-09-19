@@ -2,12 +2,13 @@
 const { query, pool } = require('../config/db');
 const { linkCache } = require('../utils/cache');
 
-// Idempotent schema migration for Step 19 (VARCHAR(32) short_code & expires_at column)
+// Idempotent schema migration for Step 19 & Step 21 (VARCHAR(32) short_code, expires_at & routing_config columns)
 (async () => {
   try {
     await pool.query(
       'ALTER TABLE links ALTER COLUMN short_code TYPE VARCHAR(32); ' +
-      'ALTER TABLE links ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ DEFAULT NULL;'
+      'ALTER TABLE links ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ DEFAULT NULL; ' +
+      'ALTER TABLE links ADD COLUMN IF NOT EXISTS routing_config JSONB DEFAULT NULL;'
     );
   } catch (_) {}
 })();
@@ -21,14 +22,15 @@ const { linkCache } = require('../utils/cache');
  * @param {string} targetUrl - Original un-normalized target URL (max 2048 chars)
  * @param {string} userId - UUID of authenticated owner
  * @param {string|Date|null} [expiresAt=null] - Optional ISO-8601 expiration timestamp
- * @returns {Promise<Object>} Inserted link record containing short_code, target_url, user_id, click_count, is_active, created_at, expires_at
+ * @param {Object|null} [routingConfig=null] - Optional Step 21 routing configuration JSON object
+ * @returns {Promise<Object>} Inserted link record containing short_code, target_url, user_id, click_count, is_active, created_at, expires_at, routing_config
  */
-async function createLink(shortCode, targetUrl, userId, expiresAt = null) {
+async function createLink(shortCode, targetUrl, userId, expiresAt = null, routingConfig = null) {
   const sql =
-    'INSERT INTO links (short_code, target_url, user_id, expires_at) ' +
-    'VALUES ($1, $2, $3, $4) ' +
-    'RETURNING short_code, target_url, user_id, click_count, is_active, created_at, expires_at';
-  const result = await query(sql, [shortCode, targetUrl, userId, expiresAt]);
+    'INSERT INTO links (short_code, target_url, user_id, expires_at, routing_config) ' +
+    'VALUES ($1, $2, $3, $4, $5) ' +
+    'RETURNING short_code, target_url, user_id, click_count, is_active, created_at, expires_at, routing_config';
+  const result = await query(sql, [shortCode, targetUrl, userId, expiresAt, routingConfig ? JSON.stringify(routingConfig) : null]);
   return result.rows[0];
 }
 
@@ -40,7 +42,7 @@ async function createLink(shortCode, targetUrl, userId, expiresAt = null) {
  */
 async function getLinkByShortCode(shortCode) {
   const sql =
-    'SELECT short_code, target_url, user_id, click_count, is_active, created_at, expires_at ' +
+    'SELECT short_code, target_url, user_id, click_count, is_active, created_at, expires_at, routing_config ' +
     'FROM links ' +
     'WHERE short_code = $1';
   const result = await query(sql, [shortCode]);
@@ -58,7 +60,7 @@ async function getLinkByShortCode(shortCode) {
  */
 async function getUserLinks(userId, limit, offset) {
   const sql =
-    'SELECT short_code, target_url, click_count, is_active, created_at, expires_at ' +
+    'SELECT short_code, target_url, click_count, is_active, created_at, expires_at, routing_config ' +
     'FROM links ' +
     'WHERE user_id = $1 ' +
     'ORDER BY created_at DESC ' +
@@ -69,17 +71,17 @@ async function getUserLinks(userId, limit, offset) {
 }
 
 /**
- * Updates target_url and/or expires_at for a link belonging to a specific user.
+ * Updates target_url, expires_at, and/or routing_config for a link belonging to a specific user.
  * Enforces ownership inside SQL: WHERE short_code = $1 AND user_id = $2.
  * Preserves short_code, created_at, click_count, and is_active status (editing an inactive link keeps it inactive).
  * Immediately invalidates process-local redirect cache.
  *
  * @param {string} shortCode - Short code or custom alias
  * @param {string} userId - UUID of authenticated owner
- * @param {Object} fields - { targetUrl?: string, expiresAt?: string|null }
+ * @param {Object} fields - { targetUrl?: string, expiresAt?: string|null, routingConfig?: Object|null }
  * @returns {Promise<Object|null>} Updated link object or null if not found/unowned
  */
-async function updateUserLink(shortCode, userId, { targetUrl, expiresAt }) {
+async function updateUserLink(shortCode, userId, { targetUrl, expiresAt, routingConfig }) {
   const setClauses = [];
   const queryParams = [shortCode, userId];
   let paramIdx = 3;
@@ -94,6 +96,11 @@ async function updateUserLink(shortCode, userId, { targetUrl, expiresAt }) {
     queryParams.push(expiresAt);
   }
 
+  if (routingConfig !== undefined) {
+    setClauses.push('routing_config = $' + paramIdx++);
+    queryParams.push(routingConfig ? JSON.stringify(routingConfig) : null);
+  }
+
   if (setClauses.length === 0) {
     return await getLinkByShortCode(shortCode);
   }
@@ -101,7 +108,7 @@ async function updateUserLink(shortCode, userId, { targetUrl, expiresAt }) {
   const sql =
     'UPDATE links SET ' + setClauses.join(', ') +
     ' WHERE short_code = $1 AND user_id = $2 ' +
-    'RETURNING short_code, target_url, user_id, click_count, is_active, created_at, expires_at';
+    'RETURNING short_code, target_url, user_id, click_count, is_active, created_at, expires_at, routing_config';
 
   const result = await query(sql, queryParams);
   // Immediately invalidate process-local redirect cache
@@ -126,7 +133,7 @@ async function deactivateUserLink(shortCode, userId) {
     'UPDATE links ' +
     'SET is_active = false ' +
     'WHERE short_code = $1 AND user_id = $2 AND is_active = true ' +
-    'RETURNING short_code, target_url, user_id, click_count, is_active, created_at, expires_at';
+    'RETURNING short_code, target_url, user_id, click_count, is_active, created_at, expires_at, routing_config';
   const updateResult = await query(updateSql, [shortCode, userId]);
   if (updateResult.rows.length > 0) {
     linkCache.del(shortCode);

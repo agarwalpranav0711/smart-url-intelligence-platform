@@ -19,6 +19,11 @@ const metrics = {
   api_key_auth_successes_total: 0,
   api_key_auth_failures_total: 0,
   database_errors_total: 0,
+  routing_evaluations_total: 0,
+  time_route_selected_total: 0,
+  device_route_selected_total: 0,
+  weighted_route_selected_total: 0,
+  routing_evaluation_errors_total: 0,
   http_4xx_total: 0,
   http_5xx_total: 0,
 };

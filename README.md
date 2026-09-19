@@ -843,9 +843,43 @@ Centralized validation via `src/config/env.js`:
 
 ---
 
-## 31. License
+## 31. Advanced Redirect Intelligence & Traffic Controls (Step 21)
+
+Step 21 introduces a dynamic, rule-based traffic routing engine ([`src/services/routingEngine.js`](file:///d:/WebDev%20PROJECTS/tiny%20url/src/services/routingEngine.js)) evaluated at redirect time (`GET /s/:code`) without requiring external routing infrastructure.
+
+### 31.1 Routing Configuration & Rule Types
+Link owners can configure `routing_config` on link creation (`POST /api/v1/links`) or via updates (`PATCH /api/v1/links/:code`).
+
+Supported rule types evaluated sequentially:
+1. **Time Routing (`type: "time"`)**:
+   * Directs traffic based on time of day (`start` and `end` in `HH:mm` format) in a specified IANA timezone (e.g. `America/New_York`, `UTC`).
+   * Supports overnight time windows (e.g., `22:00` to `06:00`) and optional day filtering (`days: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]`).
+2. **Device Routing (`type: "device"`)**:
+   * Directs traffic based on client `User-Agent` headers parsed into categories (`mobile`, `tablet`, `desktop`, or `unknown`).
+   * Evaluated via a deterministic heuristic without IP tracking, fingerprinting, or cookies.
+3. **Weighted Routing (`type: "weighted"`)**:
+   * Distributes traffic dynamically across multiple destinations (`destinations`: 2–10 targets).
+   * Supports integer weights (1–100 each, total sum 1–1000) using CSPRNG cumulative interval selection (`crypto.randomInt`).
+
+### 31.2 Payload Limits & Validation
+* **Serialized JSON Limit**: `routing_config` maximum size of **16 KB**.
+* **Rule Count Limit**: Maximum **10 rules** per link.
+* **Target URLs**: Must be valid `http` or `https` URLs $\le 2048$ characters.
+* **Time Windows**: `start` and `end` must be valid `HH:mm` timestamps. `start == end` is invalid and returns `HTTP 400 INVALID_REQUEST`.
+* **Weighted Bounds**: 2 to 10 destinations; weight integer 1–100; total weight 1 to 1000.
+* **Invalid Payloads**: Any schema violation, unknown rule type, or invalid property returns `HTTP 400 INVALID_REQUEST`.
+
+### 31.3 PATCH Semantics & Cache Eviction
+* **Object payload**: Replaces `routing_config` with validated object.
+* **`null` payload**: Clears `routing_config` back to `null`.
+* **Omitted key**: Leaves `routing_config` unchanged.
+* **Cache Eviction**: Updating `routing_config` immediately purges the process-local LRU cache entry for the link.
+
+### 31.4 Safe Fallback Behavior
+* If rule evaluation encounters an unhandled runtime exception, the system safely logs the error with `requestId`, increments `routing_evaluation_errors_total`, and falls back to `link.target_url` with `HTTP 302 Found`.
+
+---
+
+## 32. License
 
 A formal license has not yet been selected for this project. All rights reserved by the repository owner.
-
-
-

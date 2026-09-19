@@ -239,6 +239,8 @@ paths:
                   type: string
                   format: date-time
                   example: '2026-10-01T12:00:00.000Z'
+                routing_config:
+                  $ref: '#/components/schemas/RoutingConfig'
       responses:
         '201':
           description: Short link or custom alias created successfully.
@@ -261,6 +263,8 @@ paths:
                     format: date-time
                     nullable: true
                     example: '2026-10-01T12:00:00.000Z'
+                  routing_config:
+                    $ref: '#/components/schemas/RoutingConfig'
         '400':
           $ref: '#/components/responses/400BadRequest'
         '401':
@@ -334,6 +338,8 @@ paths:
                           type: string
                           format: date-time
                           nullable: true
+                        routing_config:
+                          $ref: '#/components/schemas/RoutingConfig'
                   limit:
                     type: integer
                     example: 20
@@ -351,9 +357,9 @@ paths:
     patch:
       tags:
         - Link Management
-      summary: Edit Target URL / Expiration
+      summary: Edit Target URL / Expiration / Routing Rules
       description: >
-        Updates target_url and/or expires_at for a short link owned by the authenticated user.
+        Updates target_url, expires_at, and/or routing_config for a short link owned by the authenticated user.
         Enforces ownership in SQL WHERE clause. Immediately invalidates process-local redirect cache.
       operationId: updateLink
       security:
@@ -382,6 +388,8 @@ paths:
                   format: date-time
                   nullable: true
                   example: '2026-11-01T00:00:00.000Z'
+                routing_config:
+                  $ref: '#/components/schemas/RoutingConfig'
       responses:
         '200':
           description: Short link updated successfully.
@@ -406,6 +414,8 @@ paths:
                     type: string
                     format: date-time
                     nullable: true
+                  routing_config:
+                    $ref: '#/components/schemas/RoutingConfig'
         '400':
           $ref: '#/components/responses/400BadRequest'
         '401':
@@ -582,6 +592,102 @@ components:
       description: Authenticate using your raw API key in the Authorization header (`Authorization: Bearer sk_live_...`).
 
   schemas:
+    RoutingConfig:
+      type: object
+      nullable: true
+      properties:
+        default:
+          type: string
+          format: uri
+          example: https://example.com/fallback
+        rules:
+          type: array
+          maxItems: 10
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/TimeRule'
+              - $ref: '#/components/schemas/DeviceRule'
+              - $ref: '#/components/schemas/WeightedRule'
+
+    TimeRule:
+      type: object
+      required:
+        - type
+        - start
+        - end
+        - target_url
+      properties:
+        type:
+          type: string
+          enum: [time]
+        start:
+          type: string
+          example: "09:00"
+        end:
+          type: string
+          example: "17:00"
+        timezone:
+          type: string
+          default: UTC
+          example: America/New_York
+        days:
+          type: array
+          items:
+            type: string
+            enum: [mon, tue, wed, thu, fri, sat, sun]
+        target_url:
+          type: string
+          format: uri
+          example: https://example.com/business-hours
+
+    DeviceRule:
+      type: object
+      required:
+        - type
+        - devices
+        - target_url
+      properties:
+        type:
+          type: string
+          enum: [device]
+        devices:
+          type: array
+          items:
+            type: string
+            enum: [mobile, tablet, desktop, unknown]
+        target_url:
+          type: string
+          format: uri
+          example: https://example.com/mobile-app
+
+    WeightedRule:
+      type: object
+      required:
+        - type
+        - destinations
+      properties:
+        type:
+          type: string
+          enum: [weighted]
+        destinations:
+          type: array
+          minItems: 2
+          maxItems: 10
+          items:
+            type: object
+            required:
+              - target_url
+              - weight
+            properties:
+              target_url:
+                type: string
+                format: uri
+                example: https://example.com/v1
+              weight:
+                type: integer
+                minimum: 1
+                maximum: 100
+
     ErrorEnvelope:
       type: object
       properties:

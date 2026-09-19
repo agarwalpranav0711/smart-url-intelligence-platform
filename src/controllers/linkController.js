@@ -1,10 +1,11 @@
 const linkService = require('../services/linkService');
 const logger = require('../utils/logger');
 const { incrementMetric } = require('../utils/metrics');
+const { validateRoutingConfig } = require('../utils/routingValidator');
 
 /**
  * Controller for creating short links (POST /api/v1/links).
- * Supports optional custom alias and optional expires_at timestamp.
+ * Supports optional custom alias, optional expires_at timestamp, and optional routing_config.
  */
 async function createLink(req, res) {
   // 1. Validate request body presence and type
@@ -17,7 +18,7 @@ async function createLink(req, res) {
     });
   }
 
-  const { target_url: targetUrl, alias, expires_at: expiresAt } = req.body;
+  const { target_url: targetUrl, alias, expires_at: expiresAt, routing_config: routingConfig } = req.body;
 
   // 2. Validate target_url type, presence, and non-whitespace content
   if (typeof targetUrl !== 'string' || targetUrl.trim().length === 0) {
@@ -99,11 +100,26 @@ async function createLink(req, res) {
     validExpiresAt = parsedExp.toISOString();
   }
 
-  // 8. Extract authenticated user ownership (ignoring any user_id in req.body)
+  // 8. Validate optional routing_config
+  let validRoutingConfig = null;
+  if (routingConfig !== undefined && routingConfig !== null) {
+    const valResult = validateRoutingConfig(routingConfig);
+    if (!valResult.valid) {
+      return res.status(400).json({
+        error: {
+          code: 'INVALID_REQUEST',
+          message: valResult.error
+        }
+      });
+    }
+    validRoutingConfig = valResult.value;
+  }
+
+  // 9. Extract authenticated user ownership (ignoring any user_id in req.body)
   const userId = req.user.userId;
 
   try {
-    const link = await linkService.createShortLink(targetUrl, userId, validAlias, validExpiresAt);
+    const link = await linkService.createShortLink(targetUrl, userId, validAlias, validExpiresAt, validRoutingConfig);
 
     incrementMetric('link_creations_total');
     logger.info({ event: 'link.created' });
@@ -112,7 +128,8 @@ async function createLink(req, res) {
       short_code: link.short_code,
       target_url: link.target_url,
       created_at: link.created_at,
-      expires_at: link.expires_at || null
+      expires_at: link.expires_at || null,
+      routing_config: link.routing_config || null
     });
   } catch (err) {
     if (err.code === 'ALIAS_ALREADY_EXISTS') {
@@ -137,7 +154,7 @@ async function createLink(req, res) {
 }
 
 /**
- * Controller for editing short link target URL and/or expiration (PATCH /api/v1/links/:code).
+ * Controller for editing short link target URL, expiration, or routing_config (PATCH /api/v1/links/:code).
  * Only the owner may edit. Invalidates process-local redirect cache.
  */
 async function updateLink(req, res) {
@@ -153,13 +170,13 @@ async function updateLink(req, res) {
     });
   }
 
-  const { target_url: targetUrl, expires_at: expiresAt } = req.body;
+  const { target_url: targetUrl, expires_at: expiresAt, routing_config: routingConfig } = req.body;
 
-  if (targetUrl === undefined && expiresAt === undefined) {
+  if (targetUrl === undefined && expiresAt === undefined && routingConfig === undefined) {
     return res.status(400).json({
       error: {
         code: 'INVALID_REQUEST',
-        message: 'Must provide target_url or expires_at to update'
+        message: 'Must provide target_url, expires_at, or routing_config to update'
       }
     });
   }
@@ -221,6 +238,24 @@ async function updateLink(req, res) {
     updateFields.expiresAt = null;
   }
 
+  // Validate routingConfig if provided
+  if (routingConfig !== undefined) {
+    if (routingConfig === null) {
+      updateFields.routingConfig = null;
+    } else {
+      const valResult = validateRoutingConfig(routingConfig);
+      if (!valResult.valid) {
+        return res.status(400).json({
+          error: {
+            code: 'INVALID_REQUEST',
+            message: valResult.error
+          }
+        });
+      }
+      updateFields.routingConfig = valResult.value;
+    }
+  }
+
   try {
     const updated = await linkService.updateLink(code, userId, updateFields);
 
@@ -238,7 +273,8 @@ async function updateLink(req, res) {
       target_url: updated.target_url,
       is_active: updated.is_active,
       created_at: updated.created_at,
-      expires_at: updated.expires_at || null
+      expires_at: updated.expires_at || null,
+      routing_config: updated.routing_config || null
     });
   } catch (err) {
     logger.error({ event: 'database.error', operation: 'update_link', message: err.message });
@@ -312,7 +348,8 @@ async function listLinks(req, res) {
       click_count: Number(link.click_count),
       is_active: link.is_active,
       created_at: link.created_at,
-      expires_at: link.expires_at || null
+      expires_at: link.expires_at || null,
+      routing_config: link.routing_config || null
     }));
 
     return res.status(200).json({
