@@ -559,8 +559,26 @@ For full bottleneck profiling and before/after benchmark comparisons, see [`step
 
 ---
 
-## 27. License
+## 27. Reliability & Failure Mode Testing (Step 16)
+
+Step 16 validated system resiliency, failure modes, error contracts, and automatic recovery behavior across infrastructure components without introducing external daemons.
+
+### Verified Failure & Recovery Behaviors
+
+* **Database Disconnect Resiliency**: When PostgreSQL is stopped, `/health` returns `HTTP 503 {"status":"unhealthy"}` and write endpoints return structured `HTTP 500` JSON errors. Cached redirects (`GET /s/:code`) continue serving `HTTP 302` responses from memory.
+* **Automatic DB Recovery**: Upon PostgreSQL restart, application pool connections reconnect automatically without requiring an app container restart.
+* **Cache Safety & Eviction**: LRU eviction (`maxSize = 10000`), TTL expiration (5 min), and immediate deactivation/deletion cache purges prevent stale redirects. Cache exceptions fail safely to `null` and fall back to PostgreSQL.
+* **Container Failure & Persistence**: Docker Compose restarts (`app`, `postgres`, or stack) preserve all user identities, API keys, and link data via named PostgreSQL volumes (`postgres_data`).
+* **Clean Graceful Shutdown**: `SIGTERM` and `SIGINT` handlers drain active HTTP requests via `server.close()`, end pool connections via `pool.end()`, and exit with code 0.
+* **Structured Error Contracts**: All 4xx and 5xx responses return sanitized JSON error envelopes without exposing stack traces, SQL queries, credentials, or file paths.
+
+For comprehensive scenario reports and regression verification, see [`step_16_reliability_failure_testing.md`](file:///d:/WebDev%20PROJECTS/tiny%20url/step_16_reliability_failure_testing.md).
+
+---
+
+## 28. License
 
 A formal license has not yet been selected for this project. All rights reserved by the repository owner.
+
 
 
