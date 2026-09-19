@@ -16,7 +16,16 @@ pool.on('error', (err) => {
   console.error('Unexpected error on idle PostgreSQL client:', err);
 });
 
+const { incrementMetric } = require('../utils/metrics');
+
 module.exports = {
   pool,
-  query: (text, params) => pool.query(text, params),
+  query: async (text, params) => {
+    try {
+      return await pool.query(text, params);
+    } catch (err) {
+      incrementMetric('database_errors_total');
+      throw err;
+    }
+  },
 };

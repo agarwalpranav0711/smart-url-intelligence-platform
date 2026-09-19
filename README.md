@@ -62,7 +62,8 @@ Database Tier (PostgreSQL 16)
 | Method | Endpoint | Auth Required | Description |
 | :--- | :--- | :---: | :--- |
 | `POST` | `/api/v1/users` | No | Developer account registration & initial API key provisioning. |
-| `GET` | `/health` | No | Database reachability & application health status. |
+| `GET` | `/health` | No | Pure process liveness check (`HTTP 200 {"status":"ok","uptime":...}`). |
+| `GET` | `/ready` | No | Readiness check verifying active state & PostgreSQL connectivity (`HTTP 200 / 503`). |
 | `GET` | `/metrics` | No | Returns process-local operational metrics snapshot. |
 | `GET` | `/docs` | No | Interactive Swagger UI API documentation. |
 | `GET` | `/s/:code` | No | Public short code redirect (`HTTP 302`). |
@@ -811,11 +812,38 @@ All API errors return a consistent JSON response structure:
 | **`410 Gone`** | `LINK_INACTIVE` / `LINK_EXPIRED` | Redirect attempt on soft-deactivated or expired link | `{"error":{"code":"LINK_EXPIRED","message":"Short link has expired"}}` |
 | **`429 Rate Limited`** | `RATE_LIMIT_EXCEEDED` | Exceeding 60 link creations / min / user | `{"error":{"code":"RATE_LIMIT_EXCEEDED","message":"Too many link creation requests"}}` |
 | **`500 Internal Error`** | `INTERNAL_SERVER_ERROR` | Unexpected application exception | `{"error":{"code":"INTERNAL_SERVER_ERROR","message":"Internal server error"}}` |
-| **`503 Unavailable`** | `unhealthy` status | Database connection lost (`GET /health`) | `{"status":"unhealthy"}` |
+| **`503 Unavailable`** | `not_ready` status | Database connection lost or application shutting down (`GET /ready`) | `{"status":"not_ready"}` |
 
 ---
 
-## 30. License
+## 30. Production Operability & Observability (Step 20)
+
+### 30.1 Request Correlation IDs (`X-Request-ID`)
+All HTTP requests receive a standardized correlation ID header:
+* Incoming `X-Request-ID` or `x-request-id` headers are validated against `^[A-Za-z0-9_-]{1,128}$`. Valid client headers are preserved; missing or invalid headers trigger creation of a new `crypto.randomUUID()`.
+* Attached to `req.id` and echoed on all responses via `X-Request-ID: <uuid>`.
+* Included in structured Pino log events (`request.completed`).
+
+### 30.2 Health Probe Separation (`/health` vs `/ready`)
+* **Liveness Probe (`GET /health`)**: Pure process liveness check (`HTTP 200 {"status":"ok","uptime":<seconds>}`). Does not execute database queries, preventing container restart flaps during transient DB lag.
+* **Readiness Probe (`GET /ready`)**: Evaluates database reachability (`SELECT 1`) and process shutdown status. Returns `HTTP 200 {"status":"ready"}` when ready, or `HTTP 503 {"status":"not_ready"}` during shutdown or database failure.
+
+### 30.3 Graceful Shutdown Readiness Drain
+* On `SIGTERM` or `SIGINT`, the application enters shutdown mode (`isShuttingDown = true`).
+* `GET /ready` immediately switches to `HTTP 503 {"status":"not_ready"}` to drain load balancer traffic.
+* `server.close()` stops accepting new TCP connections while allowing in-flight requests to complete before closing the PostgreSQL pool cleanly.
+
+### 30.4 Startup Environment Configuration Validation
+Centralized validation via `src/config/env.js`:
+* `PORT`: Validated as an integer between 1 and 65535.
+* `NODE_ENV`: Bounded to `development`, `production`, or `test`.
+* `DATABASE_URL`: Enforces valid URL parsing and `postgres://` or `postgresql://` schemes.
+* `LOG_LEVEL`: Bounded to `debug`, `info`, `warn`, or `error`.
+* `RATE_LIMIT_WINDOW_MS` & `RATE_LIMIT_MAX_REQUESTS`: Validated as positive finite integers.
+
+---
+
+## 31. License
 
 A formal license has not yet been selected for this project. All rights reserved by the repository owner.
 

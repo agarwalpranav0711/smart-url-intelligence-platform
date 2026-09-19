@@ -91,7 +91,8 @@ async function runStep9Tests() {
     {
       const res = await sendHttpRequest(serverPort, { method: 'GET', path: '/health' });
       assert.strictEqual(res.statusCode, 200);
-      assert.deepStrictEqual(res.json, { status: 'ok' });
+      assert.strictEqual(res.json.status, 'ok');
+      assert.strictEqual(typeof res.json.uptime, 'number');
       assert.strictEqual(res.text.includes('postgres'), false);
       assert.strictEqual(res.text.includes('password'), false);
       assert.strictEqual(res.text.includes('SELECT'), false);

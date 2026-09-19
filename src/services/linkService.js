@@ -1,6 +1,7 @@
 const { generateShortCode } = require('../utils/base62');
 const linksDb = require('../db/links');
 const { linkCache } = require('../utils/cache');
+const { incrementMetric } = require('../utils/metrics');
 
 const MAX_INSERT_ATTEMPTS = 3;
 const PG_UNIQUE_VIOLATION_CODE = '23505';
@@ -68,9 +69,11 @@ async function createShortLink(targetUrl, userId, alias = null, expiresAt = null
 async function getLinkByCode(shortCode) {
   const cached = linkCache.get(shortCode);
   if (cached !== null) {
+    incrementMetric('redirect_cache_hits_total');
     return cached;
   }
 
+  incrementMetric('redirect_cache_misses_total');
   const link = await linksDb.getLinkByShortCode(shortCode);
   if (link) {
     linkCache.set(shortCode, link);

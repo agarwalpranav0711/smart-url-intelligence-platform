@@ -66,6 +66,7 @@ async function authenticateApiKey(req, res, next) {
       userId: user.user_id
     };
 
+    incrementMetric('api_key_auth_successes_total');
     return next();
   } catch (err) {
     // Log internal error safely without exposing raw credentials or headers

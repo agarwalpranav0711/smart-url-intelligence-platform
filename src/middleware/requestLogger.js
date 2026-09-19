@@ -24,6 +24,7 @@ function requestLogger(req, res, next) {
     // Emit structured request completion log
     logger.info({
       event: 'request.completed',
+      requestId: req.id,
       method: req.method,
       path: req.path,
       status: statusCode,

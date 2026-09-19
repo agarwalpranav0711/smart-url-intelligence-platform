@@ -116,6 +116,7 @@ async function createLink(req, res) {
     });
   } catch (err) {
     if (err.code === 'ALIAS_ALREADY_EXISTS') {
+      incrementMetric('alias_conflicts_total');
       return res.status(409).json({
         error: {
           code: 'ALIAS_ALREADY_EXISTS',

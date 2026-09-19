@@ -4,13 +4,19 @@ const redirectRoutes = require('./routes/redirectRoutes');
 const opsRoutes = require('./routes/opsRoutes');
 const apiKeyRoutes = require('./routes/apiKeyRoutes');
 const docsRoutes = require('./routes/docsRoutes');
+const requestIdMiddleware = require('./middleware/requestId');
 const requestLogger = require('./middleware/requestLogger');
 const logger = require('./utils/logger');
+const { setShuttingDown } = require('./utils/shutdownState');
+const { validateEnv } = require('./config/env');
 
 const app = express();
 
 // Security Hardening: Disable X-Powered-By header
 app.disable('x-powered-by');
+
+// 0. Request correlation ID middleware (early execution for all endpoints)
+app.use(requestIdMiddleware);
 
 // 1. High-resolution request timing and structured request logging
 app.use(requestLogger);
@@ -61,6 +67,13 @@ app.use((err, req, res, next) => {
 
 // Server startup & graceful shutdown handlers when executed directly
 if (require.main === module) {
+  try {
+    validateEnv();
+  } catch (err) {
+    logger.error({ event: 'config.error', message: err.message });
+    process.exit(1);
+  }
+
   const { pool } = require('./config/db');
   const PORT = process.env.PORT || 3000;
 
@@ -68,7 +81,12 @@ if (require.main === module) {
     logger.info({ event: 'server.started', port: PORT });
   });
 
+  let shutdownInProgress = false;
   const handleShutdown = (signal) => {
+    if (shutdownInProgress) return;
+    shutdownInProgress = true;
+    setShuttingDown(true);
+
     logger.info({ event: 'server.shutdown', signal });
     server.close(async () => {
       try {
