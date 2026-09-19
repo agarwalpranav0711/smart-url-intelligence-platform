@@ -32,6 +32,6 @@ CREATE TABLE links (
 );
 
 -- Indexes for fast query resolution
-CREATE INDEX idx_api_keys_hash ON api_keys (api_key_hash);
 CREATE INDEX idx_api_keys_user ON api_keys (user_id);
 CREATE INDEX idx_links_user_created ON links (user_id, created_at DESC);
+

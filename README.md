@@ -576,9 +576,26 @@ For comprehensive scenario reports and regression verification, see [`step_16_re
 
 ---
 
-## 28. License
+## 28. API & Database Scalability Audit (Step 17)
+
+Step 17 performed an empirical query audit, EXPLAIN ANALYZE profiling (50,000 link dataset), pagination scalability benchmarking, and index redundancy analysis.
+
+### Audit & Optimization Highlights
+
+* **Redundant Index Removal**: Identified duplicate index `idx_api_keys_hash` on `api_keys(api_key_hash)`. Since `api_key_hash` is declared `UNIQUE` (auto-creating `api_keys_api_key_hash_key`), removing `idx_api_keys_hash` eliminated redundant index maintenance overhead on API key creation.
+* **Indexed Redirect Lookup**: `EXPLAIN ANALYZE` verified sub-millisecond execution time (**0.052 ms**) using primary key B-Tree index `links_pkey`.
+* **Atomic Click Update**: `EXPLAIN ANALYZE` verified atomic update execution in **0.181 ms**.
+* **Pagination Scalability**: Verified composite index `idx_links_user_created` (`user_id, created_at DESC`). Discovered that `LIMIT 20` at `OFFSET 40,000` executes in **< 30 ms** without in-memory `Sort` nodes.
+* **Connection Pool Verification**: Confirmed PostgreSQL pool `max: 20` remains optimal under high concurrency.
+
+For full query audits and EXPLAIN ANALYZE reports, see [`step_17_api_database_scalability.md`](file:///d:/WebDev%20PROJECTS/tiny%20url/step_17_api_database_scalability.md).
+
+---
+
+## 29. License
 
 A formal license has not yet been selected for this project. All rights reserved by the repository owner.
+
 
 
 
