@@ -23,12 +23,13 @@ CREATE TABLE api_keys (
 
 -- 3. Links Table (Core Short Link Mapping Record)
 CREATE TABLE links (
-    short_code VARCHAR(10) PRIMARY KEY,
+    short_code VARCHAR(32) PRIMARY KEY,
     target_url VARCHAR(2048) NOT NULL,
     user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
     click_count BIGINT NOT NULL DEFAULT 0,
     is_active BOOLEAN NOT NULL DEFAULT true,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ DEFAULT NULL
 );
 
 -- Indexes for fast query resolution

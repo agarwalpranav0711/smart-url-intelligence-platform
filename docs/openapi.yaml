@@ -4,8 +4,8 @@ info:
   description: >
     Developer-first HTTP URL shortening, traffic routing, and analytics engine MVP.
     Built with Node.js 22, Express, and PostgreSQL 16. Features cryptographically secure
-    Base62 short codes, atomic click tracking, Bearer API-key authentication, key rotation,
-    rate limiting, and process-local LRU caching.
+    Base62 short codes, custom alias support, expiration timestamps (TTL), atomic click tracking,
+    Bearer API-key authentication, key rotation, rate limiting, and process-local LRU caching.
   version: 1.0.0
 contact:
   name: Developer Platform Support
@@ -17,7 +17,7 @@ tags:
   - name: Auth & Developer Identity
     description: Developer registration, API key generation, listing, and revocation.
   - name: Link Management
-    description: Short link creation, paginated listing, and soft-deactivation.
+    description: Short link creation, custom alias management, target URL updates, paginated listing, and soft-deactivation.
   - name: Public Redirect Engine
     description: High-throughput 302 HTTP redirects.
   - name: Operational & Health
@@ -207,9 +207,10 @@ paths:
     post:
       tags:
         - Link Management
-      summary: Create Short Link
+      summary: Create Short Link or Custom Alias
       description: >
-        Generates a 6-character Base62 short code mapped to the target URL.
+        Generates a 6-character Base62 short code or registers a custom alias (3-32 chars) mapped to the target URL.
+        Optionally accepts an ISO-8601 future expiration timestamp (expires_at).
         Rate limited to 60 creations per minute per authenticated user.
       operationId: createLink
       security:
@@ -228,9 +229,19 @@ paths:
                   format: uri
                   maxLength: 2048
                   example: https://example.com/docs/developer-guide
+                alias:
+                  type: string
+                  minLength: 3
+                  maxLength: 32
+                  pattern: '^[a-zA-Z0-9_-]+$'
+                  example: portfolio
+                expires_at:
+                  type: string
+                  format: date-time
+                  example: '2026-10-01T12:00:00.000Z'
       responses:
         '201':
-          description: Short link created successfully.
+          description: Short link or custom alias created successfully.
           content:
             application/json:
               schema:
@@ -238,17 +249,32 @@ paths:
                 properties:
                   short_code:
                     type: string
-                    example: gMAlt4
+                    example: portfolio
                   target_url:
                     type: string
                     example: https://example.com/docs/developer-guide
                   created_at:
                     type: string
                     format: date-time
+                  expires_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                    example: '2026-10-01T12:00:00.000Z'
         '400':
           $ref: '#/components/responses/400BadRequest'
         '401':
           $ref: '#/components/responses/401Unauthorized'
+        '409':
+          description: Duplicate alias conflict.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+                example:
+                  error:
+                    code: ALIAS_ALREADY_EXISTS
+                    message: The requested alias is already in use
         '429':
           $ref: '#/components/responses/429RateLimited'
         '500':
@@ -304,6 +330,10 @@ paths:
                         created_at:
                           type: string
                           format: date-time
+                        expires_at:
+                          type: string
+                          format: date-time
+                          nullable: true
                   limit:
                     type: integer
                     example: 20
@@ -318,6 +348,73 @@ paths:
           $ref: '#/components/responses/500InternalError'
 
   /api/v1/links/{code}:
+    patch:
+      tags:
+        - Link Management
+      summary: Edit Target URL / Expiration
+      description: >
+        Updates target_url and/or expires_at for a short link owned by the authenticated user.
+        Enforces ownership in SQL WHERE clause. Immediately invalidates process-local redirect cache.
+      operationId: updateLink
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: code
+          in: path
+          required: true
+          description: Short code or custom alias
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                target_url:
+                  type: string
+                  format: uri
+                  maxLength: 2048
+                  example: https://new-example.com/updated-guide
+                expires_at:
+                  type: string
+                  format: date-time
+                  nullable: true
+                  example: '2026-11-01T00:00:00.000Z'
+      responses:
+        '200':
+          description: Short link updated successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  short_code:
+                    type: string
+                    example: portfolio
+                  target_url:
+                    type: string
+                    example: https://new-example.com/updated-guide
+                  is_active:
+                    type: boolean
+                    example: true
+                  created_at:
+                    type: string
+                    format: date-time
+                  expires_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+        '404':
+          $ref: '#/components/responses/404NotFound'
+        '500':
+          $ref: '#/components/responses/500InternalError'
+
     delete:
       tags:
         - Link Management
@@ -330,7 +427,7 @@ paths:
         - name: code
           in: path
           required: true
-          description: 6-character Base62 short code
+          description: Short code or custom alias
           schema:
             type: string
       responses:
@@ -357,14 +454,14 @@ paths:
         - Public Redirect Engine
       summary: Public Short URL 302 Redirect
       description: >
-        Resolves short code to target URL and issues an HTTP 302 Found redirect with non-blocking atomic click tracking.
-        Cached in process-local LRU memory for sub-millisecond redirect response times.
+        Resolves short code or custom alias to target URL and issues an HTTP 302 Found redirect with non-blocking atomic click tracking.
+        Evaluates active status and expiration time (expires_at). Cached in process-local LRU memory with strict expiration validation.
       operationId: redirectLink
       parameters:
         - name: code
           in: path
           required: true
-          description: 6-character short code
+          description: Short code or custom alias
           schema:
             type: string
       responses:
@@ -378,15 +475,15 @@ paths:
         '404':
           $ref: '#/components/responses/404NotFound'
         '410':
-          description: Short link has been deactivated.
+          description: Short link is inactive or has expired.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
                 example:
                   error:
-                    code: LINK_INACTIVE
-                    message: Short link is inactive
+                    code: LINK_EXPIRED
+                    message: Short link has expired
         '500':
           $ref: '#/components/responses/500InternalError'
 

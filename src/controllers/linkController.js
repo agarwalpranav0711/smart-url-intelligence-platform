@@ -4,6 +4,7 @@ const { incrementMetric } = require('../utils/metrics');
 
 /**
  * Controller for creating short links (POST /api/v1/links).
+ * Supports optional custom alias and optional expires_at timestamp.
  */
 async function createLink(req, res) {
   // 1. Validate request body presence and type
@@ -16,7 +17,7 @@ async function createLink(req, res) {
     });
   }
 
-  const { target_url: targetUrl } = req.body;
+  const { target_url: targetUrl, alias, expires_at: expiresAt } = req.body;
 
   // 2. Validate target_url type, presence, and non-whitespace content
   if (typeof targetUrl !== 'string' || targetUrl.trim().length === 0) {
@@ -61,12 +62,48 @@ async function createLink(req, res) {
     });
   }
 
-  // 6. Extract authenticated user ownership (ignoring any user_id in req.body)
+  // 6. Validate optional custom alias format and length (3-32 chars, a-z, A-Z, 0-9, -, _)
+  let validAlias = null;
+  if (alias !== undefined && alias !== null) {
+    if (typeof alias !== 'string' || !/^[a-zA-Z0-9_-]{3,32}$/.test(alias)) {
+      return res.status(400).json({
+        error: {
+          code: 'INVALID_REQUEST',
+          message: 'Alias must be 3-32 characters long and contain only letters, numbers, hyphens, and underscores'
+        }
+      });
+    }
+    validAlias = alias;
+  }
+
+  // 7. Validate optional expires_at (must be valid future ISO-8601 timestamp)
+  let validExpiresAt = null;
+  if (expiresAt !== undefined && expiresAt !== null) {
+    if (typeof expiresAt !== 'string' || isNaN(Date.parse(expiresAt))) {
+      return res.status(400).json({
+        error: {
+          code: 'INVALID_REQUEST',
+          message: 'expires_at must be a valid ISO-8601 timestamp'
+        }
+      });
+    }
+    const parsedExp = new Date(expiresAt);
+    if (parsedExp <= new Date()) {
+      return res.status(400).json({
+        error: {
+          code: 'INVALID_REQUEST',
+          message: 'expires_at must be a future timestamp'
+        }
+      });
+    }
+    validExpiresAt = parsedExp.toISOString();
+  }
+
+  // 8. Extract authenticated user ownership (ignoring any user_id in req.body)
   const userId = req.user.userId;
 
   try {
-    // 7. Invoke link creation service (storing original un-normalized targetUrl)
-    const link = await linkService.createShortLink(targetUrl, userId);
+    const link = await linkService.createShortLink(targetUrl, userId, validAlias, validExpiresAt);
 
     incrementMetric('link_creations_total');
     logger.info({ event: 'link.created' });
@@ -74,11 +111,136 @@ async function createLink(req, res) {
     return res.status(201).json({
       short_code: link.short_code,
       target_url: link.target_url,
-      created_at: link.created_at
+      created_at: link.created_at,
+      expires_at: link.expires_at || null
     });
   } catch (err) {
+    if (err.code === 'ALIAS_ALREADY_EXISTS') {
+      return res.status(409).json({
+        error: {
+          code: 'ALIAS_ALREADY_EXISTS',
+          message: 'The requested alias is already in use'
+        }
+      });
+    }
+
     incrementMetric('link_creation_errors_total');
     logger.error({ event: 'database.error', operation: 'create_link', message: err.message });
+    return res.status(500).json({
+      error: {
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Internal server error'
+      }
+    });
+  }
+}
+
+/**
+ * Controller for editing short link target URL and/or expiration (PATCH /api/v1/links/:code).
+ * Only the owner may edit. Invalidates process-local redirect cache.
+ */
+async function updateLink(req, res) {
+  const code = req.params.code;
+  const userId = req.user.userId;
+
+  if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+    return res.status(400).json({
+      error: {
+        code: 'INVALID_REQUEST',
+        message: 'Request body must be a JSON object'
+      }
+    });
+  }
+
+  const { target_url: targetUrl, expires_at: expiresAt } = req.body;
+
+  if (targetUrl === undefined && expiresAt === undefined) {
+    return res.status(400).json({
+      error: {
+        code: 'INVALID_REQUEST',
+        message: 'Must provide target_url or expires_at to update'
+      }
+    });
+  }
+
+  const updateFields = {};
+
+  // Validate targetUrl if provided
+  if (targetUrl !== undefined) {
+    if (typeof targetUrl !== 'string' || targetUrl.trim().length === 0 || targetUrl.length > 2048) {
+      return res.status(400).json({
+        error: {
+          code: 'INVALID_REQUEST',
+          message: 'target_url must be a valid non-empty string under 2048 characters'
+        }
+      });
+    }
+    try {
+      const parsedUrl = new URL(targetUrl);
+      if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+        return res.status(400).json({
+          error: {
+            code: 'INVALID_REQUEST',
+            message: 'Only http and https URL schemes are allowed'
+          }
+        });
+      }
+    } catch (_) {
+      return res.status(400).json({
+        error: {
+          code: 'INVALID_REQUEST',
+          message: 'target_url must be a valid URL'
+        }
+      });
+    }
+    updateFields.targetUrl = targetUrl;
+  }
+
+  // Validate expiresAt if provided
+  if (expiresAt !== undefined && expiresAt !== null) {
+    if (typeof expiresAt !== 'string' || isNaN(Date.parse(expiresAt))) {
+      return res.status(400).json({
+        error: {
+          code: 'INVALID_REQUEST',
+          message: 'expires_at must be a valid ISO-8601 timestamp'
+        }
+      });
+    }
+    const parsedExp = new Date(expiresAt);
+    if (parsedExp <= new Date()) {
+      return res.status(400).json({
+        error: {
+          code: 'INVALID_REQUEST',
+          message: 'expires_at must be a future timestamp'
+        }
+      });
+    }
+    updateFields.expiresAt = parsedExp.toISOString();
+  } else if (expiresAt === null) {
+    updateFields.expiresAt = null;
+  }
+
+  try {
+    const updated = await linkService.updateLink(code, userId, updateFields);
+
+    if (!updated) {
+      return res.status(404).json({
+        error: {
+          code: 'NOT_FOUND',
+          message: 'Short link not found'
+        }
+      });
+    }
+
+    return res.status(200).json({
+      short_code: updated.short_code,
+      target_url: updated.target_url,
+      is_active: updated.is_active,
+      created_at: updated.created_at,
+      expires_at: updated.expires_at || null
+    });
+  } catch (err) {
+    logger.error({ event: 'database.error', operation: 'update_link', message: err.message });
     return res.status(500).json({
       error: {
         code: 'INTERNAL_SERVER_ERROR',
@@ -96,7 +258,6 @@ async function listLinks(req, res) {
   let limitVal = 20;
   let offsetVal = 0;
 
-  // 1. Validate limit query parameter
   if (req.query.limit !== undefined) {
     const limitStr = String(req.query.limit);
     if (!/^\d+$/.test(limitStr)) {
@@ -118,7 +279,6 @@ async function listLinks(req, res) {
     }
   }
 
-  // 2. Validate offset query parameter
   if (req.query.offset !== undefined) {
     const offsetStr = String(req.query.offset);
     if (!/^\d+$/.test(offsetStr)) {
@@ -140,20 +300,18 @@ async function listLinks(req, res) {
     }
   }
 
-  // 3. Extract authenticated user ID (never trust user_id in query params)
   const userId = req.user.userId;
 
   try {
-    // 4. Retrieve paginated links from service layer
     const rawLinks = await linkService.getUserLinks(userId, limitVal, offsetVal);
 
-    // 5. Format response rows cleanly
     const formattedLinks = rawLinks.map((link) => ({
       short_code: link.short_code,
       target_url: link.target_url,
       click_count: Number(link.click_count),
       is_active: link.is_active,
-      created_at: link.created_at
+      created_at: link.created_at,
+      expires_at: link.expires_at || null
     }));
 
     return res.status(200).json({
@@ -174,7 +332,6 @@ async function listLinks(req, res) {
 
 /**
  * Controller for soft-deactivating a short link (DELETE /api/v1/links/:code).
- * Sets is_active = false for authenticated owner's link without physically deleting the database row.
  */
 async function deactivateLink(req, res) {
   const code = req.params.code;
@@ -197,7 +354,6 @@ async function deactivateLink(req, res) {
       logger.info({ event: 'link.deactivated' });
     }
 
-    // Both 'DEACTIVATED' and 'ALREADY_INACTIVE' return HTTP 200 (Idempotent)
     return res.status(200).json({
       message: 'Link deactivated'
     });
@@ -214,6 +370,7 @@ async function deactivateLink(req, res) {
 
 module.exports = {
   createLink,
+  updateLink,
   listLinks,
   deactivateLink,
 };

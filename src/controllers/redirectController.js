@@ -4,13 +4,13 @@ const { incrementMetric } = require('../utils/metrics');
 
 /**
  * Controller for public short URL redirects (GET /s/:code).
- * Handles short link lookup, status verification (404/410), non-blocking click count updates, and HTTP 302 redirects.
+ * Handles short link lookup, status verification (404/410 inactive/410 expired), non-blocking click count updates, and HTTP 302 redirects.
  */
 async function handleRedirect(req, res) {
   const code = req.params.code;
 
   try {
-    // 1. Look up link in PostgreSQL database
+    // 1. Look up link in PostgreSQL database or process-local LRU cache
     const link = await linkService.getLinkByCode(code);
 
     // 2. Unknown short code -> HTTP 404 NOT_FOUND
@@ -35,8 +35,18 @@ async function handleRedirect(req, res) {
       });
     }
 
-    // 4. Schedule best-effort non-blocking click count increment
-    // Fire-and-forget promise: catch errors silently to avoid unhandled rejection
+    // 4. Expired short link -> HTTP 410 LINK_EXPIRED (Evaluated at redirect time)
+    if (link.expires_at && new Date(link.expires_at) <= new Date()) {
+      incrementMetric('redirect_expired_total');
+      return res.status(410).json({
+        error: {
+          code: 'LINK_EXPIRED',
+          message: 'Short link has expired'
+        }
+      });
+    }
+
+    // 5. Schedule best-effort non-blocking click count increment
     void linkService.recordClickAsync(code).catch((err) => {
       logger.error({ event: 'database.error', operation: 'click_count_increment', message: err.message });
     });
@@ -44,7 +54,7 @@ async function handleRedirect(req, res) {
     incrementMetric('redirects_total');
     logger.info({ event: 'link.redirected' });
 
-    // 5. Immediately return HTTP 302 Redirect to Location: target_url
+    // 6. Immediately return HTTP 302 Redirect to Location: target_url
     return res.redirect(302, link.target_url);
   } catch (err) {
     logger.error({ event: 'database.error', operation: 'redirect_lookup', message: err.message });

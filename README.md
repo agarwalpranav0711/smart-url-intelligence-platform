@@ -646,25 +646,68 @@ curl -X POST http://localhost:3000/api/v1/api-keys \
 
 ---
 
-#### C. Create Short URL
+#### C. Create Short URL or Custom Alias (with optional Expiration)
 ```bash
+# 1. Random Base62 Short URL
 curl -X POST http://localhost:3000/api/v1/links \
   -H "Authorization: Bearer sk_live_EXAMPLE_KEY_11111111111111111111111111111111" \
   -H "Content-Type: application/json" \
   -d '{"target_url": "https://example.com/docs/developer-guide"}'
+
+# 2. Custom Alias Creation
+curl -X POST http://localhost:3000/api/v1/links \
+  -H "Authorization: Bearer sk_live_EXAMPLE_KEY_11111111111111111111111111111111" \
+  -H "Content-Type: application/json" \
+  -d '{"target_url": "https://example.com/portfolio", "alias": "portfolio"}'
+
+# 3. Expiring Link Creation (ISO-8601 Future Timestamp)
+curl -X POST http://localhost:3000/api/v1/links \
+  -H "Authorization: Bearer sk_live_EXAMPLE_KEY_11111111111111111111111111111111" \
+  -H "Content-Type: application/json" \
+  -d '{"target_url": "https://example.com/promo", "expires_at": "2026-10-01T12:00:00.000Z"}'
 ```
 **Expected Response (`HTTP 201 Created`)**:
 ```json
 {
-  "short_code": "gMAlt4",
-  "target_url": "https://example.com/docs/developer-guide",
-  "created_at": "2026-09-19T10:10:00.000Z"
+  "short_code": "portfolio",
+  "target_url": "https://example.com/portfolio",
+  "created_at": "2026-09-19T10:10:00.000Z",
+  "expires_at": null
+}
+```
+**Expected Response for Duplicate Alias (`HTTP 409 Conflict`)**:
+```json
+{
+  "error": {
+    "code": "ALIAS_ALREADY_EXISTS",
+    "message": "The requested alias is already in use"
+  }
 }
 ```
 
 ---
 
-#### D. List User Links (Paginated)
+#### D. Edit Target URL / Expiration (`PATCH /api/v1/links/:code`)
+```bash
+curl -X PATCH http://localhost:3000/api/v1/links/portfolio \
+  -H "Authorization: Bearer sk_live_EXAMPLE_KEY_11111111111111111111111111111111" \
+  -H "Content-Type: application/json" \
+  -d '{"target_url": "https://example.com/updated-portfolio"}'
+```
+**Expected Response (`HTTP 200 OK`)**:
+```json
+{
+  "short_code": "portfolio",
+  "target_url": "https://example.com/updated-portfolio",
+  "is_active": true,
+  "created_at": "2026-09-19T10:10:00.000Z",
+  "expires_at": null
+}
+```
+
+---
+
+#### E. List User Links (Paginated)
 ```bash
 curl -X GET "http://localhost:3000/api/v1/links?limit=20&offset=0" \
   -H "Authorization: Bearer sk_live_EXAMPLE_KEY_11111111111111111111111111111111"
@@ -674,11 +717,12 @@ curl -X GET "http://localhost:3000/api/v1/links?limit=20&offset=0" \
 {
   "links": [
     {
-      "short_code": "gMAlt4",
-      "target_url": "https://example.com/docs/developer-guide",
+      "short_code": "portfolio",
+      "target_url": "https://example.com/updated-portfolio",
       "click_count": 42,
       "is_active": true,
-      "created_at": "2026-09-19T10:10:00.000Z"
+      "created_at": "2026-09-19T10:10:00.000Z",
+      "expires_at": null
     }
   ],
   "limit": 20,
@@ -688,9 +732,9 @@ curl -X GET "http://localhost:3000/api/v1/links?limit=20&offset=0" \
 
 ---
 
-#### E. Soft-Deactivate Short Link
+#### F. Soft-Deactivate Short Link
 ```bash
-curl -X DELETE http://localhost:3000/api/v1/links/gMAlt4 \
+curl -X DELETE http://localhost:3000/api/v1/links/portfolio \
   -H "Authorization: Bearer sk_live_EXAMPLE_KEY_11111111111111111111111111111111"
 ```
 **Expected Response (`HTTP 200 OK`)**:
@@ -702,29 +746,29 @@ curl -X DELETE http://localhost:3000/api/v1/links/gMAlt4 \
 
 ---
 
-#### F. Public Short URL 302 Redirect
+#### G. Public Short URL 302 Redirect & Expiration Behavior
 ```bash
-curl -i -X GET http://localhost:3000/s/gMAlt4
+curl -i -X GET http://localhost:3000/s/portfolio
 ```
 **Expected Response (`HTTP 302 Found` for active link)**:
 ```http
 HTTP/1.1 302 Found
-Location: https://example.com/docs/developer-guide
+Location: https://example.com/updated-portfolio
 ```
 
-**Expected Response (`HTTP 410 Gone` for deactivated link)**:
+**Expected Response (`HTTP 410 Gone` for deactivated or expired link)**:
 ```json
 {
   "error": {
-    "code": "LINK_INACTIVE",
-    "message": "Short link is inactive"
+    "code": "LINK_EXPIRED",
+    "message": "Short link has expired"
   }
 }
 ```
 
 ---
 
-#### G. List API Keys & Revoke Secondary API Key
+#### H. List API Keys & Revoke Secondary API Key
 ```bash
 # List API Keys
 curl -X GET http://localhost:3000/api/v1/api-keys \
@@ -760,10 +804,11 @@ All API errors return a consistent JSON response structure:
 
 | Status Code | Error Code | Example Trigger Condition | Response Body |
 | :--- | :--- | :--- | :--- |
-| **`400 Bad Request`** | `INVALID_REQUEST` | Missing target URL or invalid payload | `{"error":{"code":"INVALID_REQUEST","message":"target_url must be a non-empty string"}}` |
+| **`400 Bad Request`** | `INVALID_REQUEST` | Missing target URL or invalid payload / past expires_at | `{"error":{"code":"INVALID_REQUEST","message":"target_url must be a non-empty string"}}` |
 | **`401 Unauthorized`** | `UNAUTHORIZED` | Missing, malformed, or revoked API key | `{"error":{"code":"UNAUTHORIZED","message":"Authentication required"}}` |
 | **`404 Not Found`** | `NOT_FOUND` | Non-existent short code, key ID, or route | `{"error":{"code":"NOT_FOUND","message":"Short link not found"}}` |
-| **`410 Gone`** | `LINK_INACTIVE` | Redirect attempt on soft-deactivated link | `{"error":{"code":"LINK_INACTIVE","message":"Short link is inactive"}}` |
+| **`409 Conflict`** | `ALIAS_ALREADY_EXISTS` | Attempting to register an already taken custom alias | `{"error":{"code":"ALIAS_ALREADY_EXISTS","message":"The requested alias is already in use"}}` |
+| **`410 Gone`** | `LINK_INACTIVE` / `LINK_EXPIRED` | Redirect attempt on soft-deactivated or expired link | `{"error":{"code":"LINK_EXPIRED","message":"Short link has expired"}}` |
 | **`429 Rate Limited`** | `RATE_LIMIT_EXCEEDED` | Exceeding 60 link creations / min / user | `{"error":{"code":"RATE_LIMIT_EXCEEDED","message":"Too many link creation requests"}}` |
 | **`500 Internal Error`** | `INTERNAL_SERVER_ERROR` | Unexpected application exception | `{"error":{"code":"INTERNAL_SERVER_ERROR","message":"Internal server error"}}` |
 | **`503 Unavailable`** | `unhealthy` status | Database connection lost (`GET /health`) | `{"status":"unhealthy"}` |
