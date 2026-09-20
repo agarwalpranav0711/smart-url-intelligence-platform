@@ -1,0 +1,26 @@
+:root {
+  /* Surface Color Tokens (Technical Infrastructure Palette) */
+  --color-brand-bg: #020617;        /* Slate-950 */
+  --color-brand-surface: #0f172a;   /* Slate-900 */
+  --color-brand-surface2: #1e293b;  /* Slate-800 */
+  --color-brand-border: #1e293b;    /* Slate-800 */
+  --color-brand-border-hover: #334155; /* Slate-700 */
+  
+  /* Text Color Tokens */
+  --color-brand-text: #f8fafc;      /* Slate-100 */
+  --color-brand-muted: #94a3b8;     /* Slate-400 */
+  
+  /* Accent & Interactive Tokens */
+  --color-brand-accent: #0ea5e9;    /* Sky-500 */
+  --color-brand-accent-hover: #0284c7; /* Sky-600 */
+  
+  /* Semantic Status Tokens */
+  --color-status-ok: #10b981;       /* Emerald-500 */
+  --color-status-warn: #f59e0b;     /* Amber-500 */
+  --color-status-error: #f43f5e;    /* Rose-500 */
+  --color-status-info: #818cf8;     /* Indigo-400 */
+  
+  /* Typography & Density Tokens */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+}
