@@ -1,32 +1,41 @@
 const express = require('express');
 const router = express.Router();
 const authenticateApiKey = require('../middleware/auth');
-const rateLimitByApiKey = require('../middleware/rateLimit');
+const {
+  rateLimitLinkCreate,
+  rateLimitLinkQuery,
+  rateLimitLinkMutation,
+  rateLimitLinkDelete
+} = require('../middleware/rateLimit');
+const parseIdempotencyHeader = require('../middleware/idempotency');
+const { checkAllowedMethods } = require('../middleware/methodHandler');
 const linkController = require('../controllers/linkController');
+const { incrementMetric } = require('../utils/metrics');
 
-/**
- * POST /api/v1/links
- * Creates a short link for authenticated user (supports optional custom alias and optional expires_at).
- * Rate limited: 60 requests per 60 seconds per API key.
- */
-router.post('/links', authenticateApiKey, rateLimitByApiKey, linkController.createLink);
+function requireJsonContentType(req, res, next) {
+  const contentType = req.get('Content-Type') || req.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    incrementMetric('validation_failures_total');
+    return res.status(415).json({
+      error: {
+        code: 'UNSUPPORTED_MEDIA_TYPE',
+        message: 'Content-Type must be application/json'
+      }
+    });
+  }
+  next();
+}
 
-/**
- * GET /api/v1/links
- * Retrieves a paginated list of short links owned by the authenticated user.
- */
-router.get('/links', authenticateApiKey, linkController.listLinks);
+// Method handling & rate limiting for /links
+router.route('/links')
+  .all(checkAllowedMethods(['GET', 'POST', 'OPTIONS']))
+  .get(authenticateApiKey, rateLimitLinkQuery, linkController.listLinks)
+  .post(authenticateApiKey, rateLimitLinkCreate, requireJsonContentType, parseIdempotencyHeader, linkController.createLink);
 
-/**
- * PATCH /api/v1/links/:code
- * Updates target_url and/or expires_at for a short link owned by the authenticated user.
- */
-router.patch('/links/:code', authenticateApiKey, linkController.updateLink);
-
-/**
- * DELETE /api/v1/links/:code
- * Soft-deactivates a short link owned by the authenticated user (is_active = false).
- */
-router.delete('/links/:code', authenticateApiKey, linkController.deactivateLink);
+// Method handling & rate limiting for /links/:code
+router.route('/links/:code')
+  .all(checkAllowedMethods(['PATCH', 'DELETE', 'OPTIONS']))
+  .patch(authenticateApiKey, rateLimitLinkMutation, requireJsonContentType, linkController.updateLink)
+  .delete(authenticateApiKey, rateLimitLinkDelete, linkController.deactivateLink);
 
 module.exports = router;

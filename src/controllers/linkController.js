@@ -2,6 +2,8 @@ const linkService = require('../services/linkService');
 const logger = require('../utils/logger');
 const { incrementMetric } = require('../utils/metrics');
 const { validateRoutingConfig } = require('../utils/routingValidator');
+const { executeIdempotentLinkCreation } = require('../db/idempotency');
+const { validateTargetUrl, validateAlias } = require('../utils/validators');
 
 /**
  * Controller for creating short links (POST /api/v1/links).
@@ -10,6 +12,7 @@ const { validateRoutingConfig } = require('../utils/routingValidator');
 async function createLink(req, res) {
   // 1. Validate request body presence and type
   if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+    incrementMetric('validation_failures_total');
     return res.status(400).json({
       error: {
         code: 'INVALID_REQUEST',
@@ -20,45 +23,14 @@ async function createLink(req, res) {
 
   const { target_url: targetUrl, alias, expires_at: expiresAt, routing_config: routingConfig } = req.body;
 
-  // 2. Validate target_url type, presence, and non-whitespace content
-  if (typeof targetUrl !== 'string' || targetUrl.trim().length === 0) {
+  // 2. Validate target_url using centralized validator
+  const urlVal = validateTargetUrl(targetUrl);
+  if (!urlVal.valid) {
+    incrementMetric('validation_failures_total');
     return res.status(400).json({
       error: {
         code: 'INVALID_REQUEST',
-        message: 'target_url must be a non-empty string'
-      }
-    });
-  }
-
-  // 3. Enforce maximum 2048-character length limit
-  if (targetUrl.length > 2048) {
-    return res.status(400).json({
-      error: {
-        code: 'INVALID_REQUEST',
-        message: 'target_url exceeds maximum length of 2048 characters'
-      }
-    });
-  }
-
-  // 4. Validate URL syntax using WHATWG URL parser
-  let parsedUrl;
-  try {
-    parsedUrl = new URL(targetUrl);
-  } catch (err) {
-    return res.status(400).json({
-      error: {
-        code: 'INVALID_REQUEST',
-        message: 'target_url must be a valid URL'
-      }
-    });
-  }
-
-  // 5. Restrict allowed URL schemes strictly to http: and https:
-  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-    return res.status(400).json({
-      error: {
-        code: 'INVALID_REQUEST',
-        message: 'Only http and https URL schemes are allowed'
+        message: urlVal.message
       }
     });
   }
@@ -66,7 +38,9 @@ async function createLink(req, res) {
   // 6. Validate optional custom alias format and length (3-32 chars, a-z, A-Z, 0-9, -, _)
   let validAlias = null;
   if (alias !== undefined && alias !== null) {
-    if (typeof alias !== 'string' || !/^[a-zA-Z0-9_-]{3,32}$/.test(alias)) {
+    const aliasVal = validateAlias(alias);
+    if (!aliasVal.valid) {
+      incrementMetric('validation_failures_total');
       return res.status(400).json({
         error: {
           code: 'INVALID_REQUEST',
@@ -81,6 +55,7 @@ async function createLink(req, res) {
   let validExpiresAt = null;
   if (expiresAt !== undefined && expiresAt !== null) {
     if (typeof expiresAt !== 'string' || isNaN(Date.parse(expiresAt))) {
+      incrementMetric('validation_failures_total');
       return res.status(400).json({
         error: {
           code: 'INVALID_REQUEST',
@@ -90,6 +65,7 @@ async function createLink(req, res) {
     }
     const parsedExp = new Date(expiresAt);
     if (parsedExp <= new Date()) {
+      incrementMetric('validation_failures_total');
       return res.status(400).json({
         error: {
           code: 'INVALID_REQUEST',
@@ -105,6 +81,7 @@ async function createLink(req, res) {
   if (routingConfig !== undefined && routingConfig !== null) {
     const valResult = validateRoutingConfig(routingConfig);
     if (!valResult.valid) {
+      incrementMetric('validation_failures_total');
       return res.status(400).json({
         error: {
           code: 'INVALID_REQUEST',
@@ -117,6 +94,57 @@ async function createLink(req, res) {
 
   // 9. Extract authenticated user ownership (ignoring any user_id in req.body)
   const userId = req.user.userId;
+
+  // 10. Idempotent Link Creation Path (single transaction)
+  if (req.idempotency) {
+    try {
+      const result = await executeIdempotentLinkCreation({
+        userId,
+        idempotencyKey: req.idempotency.key,
+        requestHash: req.idempotency.hash,
+        createFn: async (dbClient) => {
+          return linkService.createShortLink(targetUrl, userId, validAlias, validExpiresAt, validRoutingConfig, dbClient);
+        }
+      });
+
+      if (result.conflict) {
+        return res.status(409).json({
+          error: {
+            code: 'IDEMPOTENCY_CONFLICT',
+            message: 'Idempotency key reused with different request payload'
+          }
+        });
+      }
+
+      if (result.replayed) {
+        res.setHeader('Idempotency-Replayed', 'true');
+        return res.status(result.status).json(result.body);
+      }
+
+      incrementMetric('link_creations_total');
+      logger.info({ event: 'link.created' });
+      return res.status(201).json(result.body);
+    } catch (err) {
+      if (err.code === 'ALIAS_ALREADY_EXISTS') {
+        incrementMetric('alias_conflicts_total');
+        return res.status(409).json({
+          error: {
+            code: 'ALIAS_ALREADY_EXISTS',
+            message: 'The requested alias is already in use'
+          }
+        });
+      }
+
+      incrementMetric('link_creation_errors_total');
+      logger.error({ event: 'database.error', operation: 'create_link_idempotent', message: err.message });
+      return res.status(500).json({
+        error: {
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Internal server error'
+        }
+      });
+    }
+  }
 
   try {
     const link = await linkService.createShortLink(targetUrl, userId, validAlias, validExpiresAt, validRoutingConfig);

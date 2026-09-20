@@ -8,6 +8,7 @@
     "start": "node src/app.js",
     "dev": "node --watch src/app.js",
     "setup-db": "node scripts/setup-db.js",
+    "cleanup": "node scripts/cleanup-maintenance.js",
     "test": "node test/integration.js"
   },
   "keywords": [

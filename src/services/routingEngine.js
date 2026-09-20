@@ -67,20 +67,29 @@ function getZonedDateTimeInfo(date, timeZone = 'UTC') {
 }
 
 /**
- * Core Step 21 Routing Engine.
+ * Core Step 21 & Step 22 Routing Engine with detailed routing metadata.
  * Evaluates configured rules sequentially in array order (time -> device -> weighted).
- * Safely falls back to routing_config.default or primary link.target_url if no rule matches.
+ * Returns destination URL alongside deterministic route_type and route_key for Step 22 analytics.
  *
  * @param {Object} linkRecord - Link record containing target_url and routing_config
  * @param {Object} [req=null] - Express HTTP request object
  * @param {Date} [now=new Date()] - Date instance for time evaluation (testing override)
- * @returns {string} Evaluated destination URL for HTTP 302 redirect
+ * @returns {{ destinationUrl: string, routeType: string, routeKey: string }} Evaluated routing outcome
  */
-function evaluateRoutingRules(linkRecord, req = null, now = new Date()) {
+function evaluateRoutingRulesWithDetails(linkRecord, req = null, now = new Date()) {
+  if (module.exports.evaluateRoutingRules !== evaluateRoutingRules) {
+    const dest = module.exports.evaluateRoutingRules(linkRecord, req, now);
+    return { destinationUrl: dest, routeType: 'fallback', routeKey: 'fallback' };
+  }
+
   const config = linkRecord ? linkRecord.routing_config : null;
 
   if (!config) {
-    return linkRecord.target_url;
+    return {
+      destinationUrl: linkRecord.target_url,
+      routeType: 'fallback',
+      routeKey: 'fallback',
+    };
   }
 
   incrementMetric('routing_evaluations_total');
@@ -90,7 +99,8 @@ function evaluateRoutingRules(linkRecord, req = null, now = new Date()) {
       ? (req.get('User-Agent') || req.get('user-agent') || '')
       : '';
 
-    for (const rule of config.rules) {
+    for (let ruleIndex = 0; ruleIndex < config.rules.length; ruleIndex++) {
+      const rule = config.rules[ruleIndex];
       if (!rule || typeof rule !== 'object') continue;
 
       // A. Time-based Rule Evaluation
@@ -119,7 +129,11 @@ function evaluateRoutingRules(linkRecord, req = null, now = new Date()) {
 
         if (isMatch) {
           incrementMetric('time_route_selected_total');
-          return rule.target_url;
+          return {
+            destinationUrl: rule.target_url,
+            routeType: 'time',
+            routeKey: `rule_${ruleIndex}`,
+          };
         }
       }
 
@@ -132,7 +146,11 @@ function evaluateRoutingRules(linkRecord, req = null, now = new Date()) {
 
         if (allowedDevices.includes(classifiedDevice)) {
           incrementMetric('device_route_selected_total');
-          return rule.target_url;
+          return {
+            destinationUrl: rule.target_url,
+            routeType: 'device',
+            routeKey: `rule_${ruleIndex}`,
+          };
         }
       }
 
@@ -148,15 +166,24 @@ function evaluateRoutingRules(linkRecord, req = null, now = new Date()) {
             const rand = crypto.randomInt(0, totalWeight);
             let cumulative = 0;
 
-            for (const dest of rule.destinations) {
+            for (let destIndex = 0; destIndex < rule.destinations.length; destIndex++) {
+              const dest = rule.destinations[destIndex];
               cumulative += dest.weight || 0;
               if (rand < cumulative) {
                 incrementMetric('weighted_route_selected_total');
-                return dest.target_url;
+                return {
+                  destinationUrl: dest.target_url,
+                  routeType: 'weighted',
+                  routeKey: `dest_${destIndex}`,
+                };
               }
             }
             incrementMetric('weighted_route_selected_total');
-            return rule.destinations[0].target_url;
+            return {
+              destinationUrl: rule.destinations[0].target_url,
+              routeType: 'weighted',
+              routeKey: 'dest_0',
+            };
           }
         }
       }
@@ -165,14 +192,30 @@ function evaluateRoutingRules(linkRecord, req = null, now = new Date()) {
 
   // Fallback: If no rule matched, use rule-level default target or primary link.target_url
   if (config.default && typeof config.default === 'string' && config.default.trim().length > 0) {
-    return config.default;
+    return {
+      destinationUrl: config.default,
+      routeType: 'default',
+      routeKey: 'default',
+    };
   }
 
-  return linkRecord.target_url;
+  return {
+    destinationUrl: linkRecord.target_url,
+    routeType: 'fallback',
+    routeKey: 'fallback',
+  };
+}
+
+/**
+ * Backward-compatible wrapper returning only destinationUrl string.
+ */
+function evaluateRoutingRules(linkRecord, req = null, now = new Date()) {
+  return evaluateRoutingRulesWithDetails(linkRecord, req, now).destinationUrl;
 }
 
 module.exports = {
   classifyDevice,
   getZonedDateTimeInfo,
   evaluateRoutingRules,
+  evaluateRoutingRulesWithDetails,
 };

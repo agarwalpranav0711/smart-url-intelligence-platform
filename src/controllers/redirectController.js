@@ -2,12 +2,25 @@ const linkService = require('../services/linkService');
 const logger = require('../utils/logger');
 const { incrementMetric } = require('../utils/metrics');
 const routingEngine = require('../services/routingEngine');
+const analyticsService = require('../services/analyticsService');
 
 /**
  * Controller for public short URL redirects (GET /s/:code).
- * Handles short link lookup, status verification (404/410 inactive/410 expired), rule evaluation, non-blocking click count updates, and HTTP 302 redirects.
+ * Handles short link lookup, status verification (404/410 inactive/410 expired), rule evaluation, non-blocking click count updates, analytics buffer recording, and HTTP 302 redirects.
  */
 async function handleRedirect(req, res) {
+  // Reject HEAD method on /s/:code with HTTP 405 METHOD_NOT_ALLOWED (Allow: GET)
+  if (req.method === 'HEAD') {
+    incrementMetric('unsupported_method_total');
+    res.setHeader('Allow', 'GET');
+    return res.status(405).json({
+      error: {
+        code: 'METHOD_NOT_ALLOWED',
+        message: 'Method Not Allowed'
+      }
+    });
+  }
+
   const code = req.params.code;
 
   try {
@@ -49,8 +62,13 @@ async function handleRedirect(req, res) {
 
     // 5. Evaluate Step 21 Routing Rules with safe fallback to link.target_url
     let destinationUrl = link.target_url;
+    let routeType = 'fallback';
+    let routeKey = 'fallback';
     try {
-      destinationUrl = routingEngine.evaluateRoutingRules(link, req);
+      const outcome = routingEngine.evaluateRoutingRulesWithDetails(link, req);
+      destinationUrl = outcome.destinationUrl;
+      routeType = outcome.routeType;
+      routeKey = outcome.routeKey;
     } catch (routingErr) {
       logger.error({
         event: 'routing.error',
@@ -60,17 +78,31 @@ async function handleRedirect(req, res) {
       });
       incrementMetric('routing_evaluation_errors_total');
       destinationUrl = link.target_url;
+      routeType = 'fallback';
+      routeKey = 'fallback';
     }
 
-    // 6. Schedule best-effort non-blocking click count increment
+    // 6. Schedule best-effort non-blocking click count increment and Step 22 analytics ingestion
     void linkService.recordClickAsync(code).catch((err) => {
       logger.error({ event: 'database.error', operation: 'click_count_increment', message: err.message });
     });
 
+    try {
+      analyticsService.recordEvent({
+        shortCode: code,
+        routeType,
+        routeKey,
+        destinationUrl,
+      });
+    } catch (analyticsErr) {
+      logger.error({ event: 'analytics.error', message: analyticsErr.message });
+    }
+
     incrementMetric('redirects_total');
     logger.info({ event: 'link.redirected' });
 
-    // 7. Immediately return HTTP 302 Redirect to Location: destinationUrl
+    // 7. Immediately return HTTP 302 Redirect with Cache-Control headers
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     return res.redirect(302, destinationUrl);
   } catch (err) {
     logger.error({ event: 'database.error', operation: 'redirect_lookup', message: err.message });

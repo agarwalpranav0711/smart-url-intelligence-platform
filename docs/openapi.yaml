@@ -453,8 +453,104 @@ paths:
                     example: Link deactivated
         '401':
           $ref: '#/components/responses/401Unauthorized'
+  /api/v1/links/{code}/analytics:
+    get:
+      tags:
+        - Analytics & Intelligence
+      summary: Get Per-Link Analytics & Routing Breakdown
+      description: Returns time-series traffic and routing breakdown for a short link owned by authenticated developer over requested date range (max 90 days).
+      operationId: getLinkAnalytics
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: code
+          in: path
+          required: true
+          description: Short code or custom alias
+          schema:
+            type: string
+        - name: from
+          in: query
+          required: false
+          description: Start UTC ISO-8601 timestamp (default 30 days ago)
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          description: End UTC ISO-8601 timestamp (default now)
+          schema:
+            type: string
+            format: date-time
+        - name: interval
+          in: query
+          required: false
+          description: Grouping interval (hour or day, default day)
+          schema:
+            type: string
+            enum: [hour, day]
+            default: day
+      responses:
+        '200':
+          description: Per-link traffic and routing breakdown.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LinkAnalyticsResponse'
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
         '404':
           $ref: '#/components/responses/404NotFound'
+        '500':
+          $ref: '#/components/responses/500InternalError'
+
+  /api/v1/analytics/summary:
+    get:
+      tags:
+        - Analytics & Intelligence
+      summary: Get Overall Developer Analytics & Top Links
+      description: Returns aggregate developer traffic summary, active links count, and top links leaderboard ordered by click volume.
+      operationId: getAnalyticsSummary
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          required: false
+          description: Start UTC ISO-8601 timestamp (default 30 days ago)
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          description: End UTC ISO-8601 timestamp (default now)
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          required: false
+          description: Max top links to return (1 to 50, default 10)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 10
+      responses:
+        '200':
+          description: Overall developer analytics summary and top links leaderboard.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyticsSummaryResponse'
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
         '500':
           $ref: '#/components/responses/500InternalError'
 
@@ -592,6 +688,91 @@ components:
       description: Authenticate using your raw API key in the Authorization header (`Authorization: Bearer sk_live_...`).
 
   schemas:
+    LinkAnalyticsResponse:
+      type: object
+      properties:
+        short_code:
+          type: string
+          example: portfolio
+        total_clicks:
+          type: integer
+          example: 1450
+        time_range:
+          type: object
+          properties:
+            from:
+              type: string
+              format: date-time
+            to:
+              type: string
+              format: date-time
+            interval:
+              type: string
+              enum: [hour, day]
+        traffic_series:
+          type: array
+          items:
+            type: object
+            properties:
+              timestamp:
+                type: string
+                format: date-time
+              clicks:
+                type: integer
+        routing_breakdown:
+          type: array
+          items:
+            type: object
+            properties:
+              route_type:
+                type: string
+                example: device
+              route_key:
+                type: string
+                example: rule_0
+              destination_url:
+                type: string
+                example: https://m.example.com/mobile
+              clicks:
+                type: integer
+                example: 800
+              percentage:
+                type: number
+                example: 55.17
+
+    AnalyticsSummaryResponse:
+      type: object
+      properties:
+        total_clicks:
+          type: integer
+          example: 9840
+        active_links_count:
+          type: integer
+          example: 14
+        time_range:
+          type: object
+          properties:
+            from:
+              type: string
+              format: date-time
+            to:
+              type: string
+              format: date-time
+        top_links:
+          type: array
+          items:
+            type: object
+            properties:
+              short_code:
+                type: string
+                example: portfolio
+              target_url:
+                type: string
+                example: https://example.com/portfolio
+              clicks:
+                type: integer
+                example: 1450
+
     RoutingConfig:
       type: object
       nullable: true

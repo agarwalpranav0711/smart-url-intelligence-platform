@@ -880,6 +880,30 @@ Supported rule types evaluated sequentially:
 
 ---
 
-## 32. License
+## 32. Advanced Analytics & Traffic Intelligence (Step 22)
+
+Step 22 introduces a scalable, eventual-consistent analytics engine ([`src/services/analyticsService.js`](file:///d:/WebDev%20PROJECTS/tiny%20url/src/services/analyticsService.js)) providing time-series click curves, top links leaderboards, and routing rule destination breakdowns.
+
+### 32.1 Process-Local Buffer & Bulk UPSERT Aggregation
+* **Non-Blocking Ingestion**: Redirect events update a bounded process-local memory map without delaying HTTP 302 responses or awaiting database writes.
+* **Periodic Bulk Flushes**: Flushes accumulate click counts into hourly buckets (`link_analytics_hourly`) every 5 seconds via atomic bulk SQL `UPSERT` statements (`INSERT ... ON CONFLICT (short_code, bucket_start, route_type, route_key) DO UPDATE`).
+* **Hard Memory Buffer Bounds**: Bounded to `MAX_BUFFER_ENTRIES = 10000`. Overflows drop new analytics events safely without interrupting client redirects while incrementing `analytics_buffer_overflow_total`.
+
+### 32.2 Analytics Endpoints & Query Bounds
+* **Per-Link Analytics (`GET /api/v1/links/:code/analytics`)**:
+  * Accepts `from`, `to` (ISO-8601 timestamps), and `interval` (`hour` or `day`, default `day`).
+  * Enforces owner authorization (`user_id = req.user.userId`). Returns `HTTP 404 NOT_FOUND` for unowned links.
+  * Bounded to maximum 90 days range. Returns time-series traffic arrays and routing rule selection breakdowns (`route_type`, `route_key`, `destination_url`, `clicks`, `percentage`).
+* **Summary Analytics (`GET /api/v1/analytics/summary`)**:
+  * Accepts `from`, `to`, and `limit` (1..50, default 10).
+  * Returns total developer clicks, `active_links_count` (from an indexed current-state query), and top links leaderboard ordered by click volume.
+
+### 32.3 Privacy Safeguards & Maintenance Cleanup
+* **Zero Privacy Intrusion**: No client IP logging, zero fingerprinting, zero tracking cookies, and zero raw User-Agent storage.
+* **Workerless Maintenance Script**: Retention cleanup (`node scripts/cleanup-analytics.js`) executes bounded batch deletes (`LIMIT 5000`) for rows older than 90 days out-of-band, leaving `/health` and `/ready` probes side-effect free.
+
+---
+
+## 33. License
 
 A formal license has not yet been selected for this project. All rights reserved by the repository owner.

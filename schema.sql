@@ -37,3 +37,30 @@ CREATE TABLE links (
 CREATE INDEX idx_api_keys_user ON api_keys (user_id);
 CREATE INDEX idx_links_user_created ON links (user_id, created_at DESC);
 
+-- 4. Step 22 Hourly Traffic & Routing Analytics Table
+CREATE TABLE IF NOT EXISTS link_analytics_hourly (
+    short_code VARCHAR(32) NOT NULL REFERENCES links(short_code) ON DELETE CASCADE,
+    bucket_start TIMESTAMPTZ NOT NULL,
+    route_type VARCHAR(16) NOT NULL DEFAULT 'default',
+    route_key VARCHAR(32) NOT NULL DEFAULT 'default',
+    destination_url VARCHAR(2048) NOT NULL,
+    click_count BIGINT NOT NULL DEFAULT 1,
+    PRIMARY KEY (short_code, bucket_start, route_type, route_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_analytics_hourly_code_bucket ON link_analytics_hourly (short_code, bucket_start DESC);
+CREATE INDEX IF NOT EXISTS idx_analytics_hourly_bucket_code ON link_analytics_hourly (bucket_start DESC, short_code);
+
+-- 5. Step 23 Transactional Idempotency Keys Table
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+    user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    idempotency_key VARCHAR(64) NOT NULL,
+    request_hash CHAR(64) NOT NULL,
+    response_status INT NOT NULL,
+    response_body JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (user_id, idempotency_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_idempotency_keys_expires ON idempotency_keys (expires_at);

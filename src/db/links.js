@@ -2,13 +2,35 @@
 const { query, pool } = require('../config/db');
 const { linkCache } = require('../utils/cache');
 
-// Idempotent schema migration for Step 19 & Step 21 (VARCHAR(32) short_code, expires_at & routing_config columns)
+// Idempotent schema migration for Step 19, 21, 22 & Step 23
 (async () => {
   try {
     await pool.query(
       'ALTER TABLE links ALTER COLUMN short_code TYPE VARCHAR(32); ' +
       'ALTER TABLE links ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ DEFAULT NULL; ' +
-      'ALTER TABLE links ADD COLUMN IF NOT EXISTS routing_config JSONB DEFAULT NULL;'
+      'ALTER TABLE links ADD COLUMN IF NOT EXISTS routing_config JSONB DEFAULT NULL; ' +
+      'CREATE TABLE IF NOT EXISTS link_analytics_hourly (' +
+      '  short_code VARCHAR(32) NOT NULL REFERENCES links(short_code) ON DELETE CASCADE, ' +
+      '  bucket_start TIMESTAMPTZ NOT NULL, ' +
+      '  route_type VARCHAR(16) NOT NULL DEFAULT \'default\', ' +
+      '  route_key VARCHAR(32) NOT NULL DEFAULT \'default\', ' +
+      '  destination_url VARCHAR(2048) NOT NULL, ' +
+      '  click_count BIGINT NOT NULL DEFAULT 1, ' +
+      '  PRIMARY KEY (short_code, bucket_start, route_type, route_key) ' +
+      '); ' +
+      'CREATE INDEX IF NOT EXISTS idx_analytics_hourly_code_bucket ON link_analytics_hourly (short_code, bucket_start DESC); ' +
+      'CREATE INDEX IF NOT EXISTS idx_analytics_hourly_bucket_code ON link_analytics_hourly (bucket_start DESC, short_code); ' +
+      'CREATE TABLE IF NOT EXISTS idempotency_keys (' +
+      '  user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE, ' +
+      '  idempotency_key VARCHAR(64) NOT NULL, ' +
+      '  request_hash CHAR(64) NOT NULL, ' +
+      '  response_status INT NOT NULL, ' +
+      '  response_body JSONB NOT NULL, ' +
+      '  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, ' +
+      '  expires_at TIMESTAMPTZ NOT NULL, ' +
+      '  PRIMARY KEY (user_id, idempotency_key) ' +
+      '); ' +
+      'CREATE INDEX IF NOT EXISTS idx_idempotency_keys_expires ON idempotency_keys (expires_at);'
     );
   } catch (_) {}
 })();
@@ -23,14 +45,16 @@ const { linkCache } = require('../utils/cache');
  * @param {string} userId - UUID of authenticated owner
  * @param {string|Date|null} [expiresAt=null] - Optional ISO-8601 expiration timestamp
  * @param {Object|null} [routingConfig=null] - Optional Step 21 routing configuration JSON object
+ * @param {Object|null} [dbClient=null] - Optional transaction pg.Client for single-transaction idempotency
  * @returns {Promise<Object>} Inserted link record containing short_code, target_url, user_id, click_count, is_active, created_at, expires_at, routing_config
  */
-async function createLink(shortCode, targetUrl, userId, expiresAt = null, routingConfig = null) {
+async function createLink(shortCode, targetUrl, userId, expiresAt = null, routingConfig = null, dbClient = null) {
   const sql =
     'INSERT INTO links (short_code, target_url, user_id, expires_at, routing_config) ' +
     'VALUES ($1, $2, $3, $4, $5) ' +
     'RETURNING short_code, target_url, user_id, click_count, is_active, created_at, expires_at, routing_config';
-  const result = await query(sql, [shortCode, targetUrl, userId, expiresAt, routingConfig ? JSON.stringify(routingConfig) : null]);
+  const queryExecutor = dbClient ? dbClient.query.bind(dbClient) : query;
+  const result = await queryExecutor(sql, [shortCode, targetUrl, userId, expiresAt, routingConfig ? JSON.stringify(routingConfig) : null]);
   return result.rows[0];
 }
 

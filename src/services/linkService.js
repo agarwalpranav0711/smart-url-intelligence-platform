@@ -16,11 +16,11 @@ const PG_UNIQUE_VIOLATION_CODE = '23505';
  * @param {string|Date|null} [expiresAt=null] - Optional ISO-8601 expiration timestamp
  * @returns {Promise<Object>} Created link record
  */
-async function createShortLink(targetUrl, userId, alias = null, expiresAt = null, routingConfig = null) {
+async function createShortLink(targetUrl, userId, alias = null, expiresAt = null, routingConfig = null, dbClient = null) {
   // 1. Custom Alias Path (No random code generation or retry loop)
   if (alias) {
     try {
-      const link = await linksDb.createLink(alias, targetUrl, userId, expiresAt, routingConfig);
+      const link = await linksDb.createLink(alias, targetUrl, userId, expiresAt, routingConfig, dbClient);
       return link;
     } catch (err) {
       if (err.code === PG_UNIQUE_VIOLATION_CODE) {
@@ -39,7 +39,7 @@ async function createShortLink(targetUrl, userId, alias = null, expiresAt = null
     const shortCode = generateShortCode();
 
     try {
-      const link = await linksDb.createLink(shortCode, targetUrl, userId, expiresAt, routingConfig);
+      const link = await linksDb.createLink(shortCode, targetUrl, userId, expiresAt, routingConfig, dbClient);
       return link;
     } catch (err) {
       if (err.code === PG_UNIQUE_VIOLATION_CODE) {
