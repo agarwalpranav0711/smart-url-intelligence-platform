@@ -118,6 +118,18 @@ export interface PaginationParams {
   offset?: number;
 }
 
+export interface GetLinkAnalyticsParams {
+  from?: string;
+  to?: string;
+  interval?: 'hour' | 'day';
+}
+
+export interface GetAnalyticsSummaryParams {
+  from?: string;
+  to?: string;
+  limit?: number;
+}
+
 export interface TrafficSeriesItem {
   timestamp: string;
   clicks: number;

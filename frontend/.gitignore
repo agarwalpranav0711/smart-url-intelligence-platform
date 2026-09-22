@@ -26,3 +26,4 @@ dist-ssr
 coverage
 test-results
 playwright-report
+*.tsbuildinfo

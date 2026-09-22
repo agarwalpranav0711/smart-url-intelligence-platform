@@ -1,8 +1,13 @@
 import { apiClient } from '../client';
-import { AnalyticsSummaryResponse, LinkAnalyticsResponse } from '../types';
+import {
+  AnalyticsSummaryResponse,
+  GetAnalyticsSummaryParams,
+  GetLinkAnalyticsParams,
+  LinkAnalyticsResponse,
+} from '../types';
 
 export const analyticsApi = {
-  getSummary: async (params?: { from?: string; to?: string; limit?: number }): Promise<AnalyticsSummaryResponse> => {
+  getSummary: async (params?: GetAnalyticsSummaryParams): Promise<AnalyticsSummaryResponse> => {
     const query = new URLSearchParams();
     if (params?.from) query.set('from', params.from);
     if (params?.to) query.set('to', params.to);
@@ -13,7 +18,7 @@ export const analyticsApi = {
 
   getLinkAnalytics: async (
     code: string,
-    params?: { from?: string; to?: string; interval?: 'hour' | 'day' }
+    params?: GetLinkAnalyticsParams
   ): Promise<LinkAnalyticsResponse> => {
     const query = new URLSearchParams();
     if (params?.from) query.set('from', params.from);

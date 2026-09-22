@@ -11,6 +11,8 @@ import { Skeleton } from '../components/common/Skeleton';
 import { EditLinkModal } from '../components/common/EditLinkModal';
 import { DeactivateLinkModal } from '../components/common/DeactivateLinkModal';
 import { RoutingSummaryCard } from '../components/common/RoutingSummaryCard';
+import { TimeSeriesChart } from '../components/analytics/TimeSeriesChart';
+import { RoutingBreakdownTable } from '../components/analytics/RoutingBreakdownTable';
 import { linksApi } from '../api/endpoints/links';
 import { analyticsApi } from '../api/endpoints/analytics';
 import { useAuth } from '../context/AuthContext';
@@ -217,7 +219,12 @@ export const LinkDetailPage: React.FC = () => {
                   <BarChart2 className="w-4 h-4 text-emerald-400" />
                   <span>Recorded Analytics Snapshot</span>
                 </div>
-                <Button variant="ghost" size="sm" onClick={() => navigate('/analytics')} className="text-[11px]">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => navigate(`/analytics?code=${code}`)}
+                  className="text-[11px]"
+                >
                   View Full Analytics →
                 </Button>
               </div>
@@ -236,23 +243,16 @@ export const LinkDetailPage: React.FC = () => {
                 </div>
               </div>
 
-              {analyticsData.routing_breakdown && analyticsData.routing_breakdown.length > 0 && (
-                <div className="space-y-2 pt-2">
-                  <div className="text-[10px] text-slate-400 uppercase font-semibold">Routing Destination Breakdown</div>
-                  <div className="border border-slate-800 rounded overflow-hidden divide-y divide-slate-800">
-                    {analyticsData.routing_breakdown.map((item, idx) => (
-                      <div key={idx} className="p-2.5 bg-slate-900 flex items-center justify-between">
-                        <div>
-                          <span className="text-slate-200 font-semibold">{item.route_type}</span>
-                          <span className="text-slate-500 ml-2">({item.route_key})</span>
-                        </div>
-                        <div className="text-slate-400 max-w-xs truncate">{item.destination_url}</div>
-                        <div className="text-sky-400 font-semibold">{formatNumber(item.clicks)} clicks</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+              {/* Compact Time Series Chart */}
+              {analyticsData.traffic_series && analyticsData.traffic_series.length > 0 && (
+                <TimeSeriesChart
+                  data={analyticsData.traffic_series}
+                  interval={analyticsData.time_range?.interval || 'day'}
+                />
               )}
+
+              {/* Compact Routing Breakdown Table */}
+              <RoutingBreakdownTable data={analyticsData.routing_breakdown || []} />
             </div>
           )}
 
