@@ -8,10 +8,11 @@ on:
 
 env:
   DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/url_shortener
+  NODE_ENV: test
 
 jobs:
-  test-and-build:
-    name: Test & Build Docker Image
+  ci-pipeline:
+    name: Full-Stack CI Pipeline
     runs-on: ubuntu-latest
 
     services:
@@ -39,18 +40,65 @@ jobs:
         with:
           node-version: 22
           cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
 
-      - name: Install dependencies
+      - name: Install root backend dependencies
         run: npm ci
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm ci
 
       - name: Setup PostgreSQL Schema & Database
         run: npm run setup-db
 
-      - name: Run Integration Tests
+      - name: Run Backend Integration Tests
         run: npm test
 
-      - name: Security Vulnerability Audit
-        run: npm audit
+      - name: OpenAPI Specification Contract Verification
+        run: node test/step25-openapi-docs.test.js
 
-      - name: Build Docker Image
+      - name: Run Frontend Unit & Component Tests
+        run: |
+          cd frontend
+          npm test -- --run
+
+      - name: Run Frontend TypeScript Typecheck
+        run: |
+          cd frontend
+          npm run typecheck
+
+      - name: Build Frontend Production Bundle
+        run: |
+          cd frontend
+          npm run build
+
+      - name: Install Playwright Browsers & Dependencies
+        run: |
+          cd frontend
+          npx playwright install --with-deps chromium
+
+      - name: Run Playwright E2E Tests
+        run: |
+          cd frontend
+          npx playwright test
+
+      - name: Upload Playwright Test Report Artifact
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 14
+
+      - name: Security Vulnerability Audit
+        run: |
+          npm audit --audit-level=high
+          cd frontend
+          npm audit --audit-level=high
+
+      - name: Build Docker Container Image
         run: docker build -t tinyurl-app:latest .
