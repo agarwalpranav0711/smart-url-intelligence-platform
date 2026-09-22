@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
 let currentApiKey: string | null = null;
+let currentCsrfToken: string | null = null;
 
 export function setClientApiKey(key: string | null): void {
   currentApiKey = key;
@@ -8,6 +9,14 @@ export function setClientApiKey(key: string | null): void {
 
 export function getClientApiKey(): string | null {
   return currentApiKey;
+}
+
+export function setClientCsrfToken(token: string | null): void {
+  currentCsrfToken = token;
+}
+
+export function getClientCsrfToken(): string | null {
+  return currentCsrfToken;
 }
 
 export class ApiError extends Error {
@@ -30,7 +39,7 @@ const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL || '';
 
 /**
  * Centralized API Client Layer for Smart URL Intelligence Platform.
- * Uses native fetch with standard error normalization and request correlation ID.
+ * Uses native fetch with standard error normalization, credentials, and CSRF token injection.
  */
 export class ApiClient {
   /**
@@ -38,6 +47,7 @@ export class ApiClient {
    */
   async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const headers = new Headers(options.headers || {});
+    const method = (options.method || 'GET').toUpperCase();
 
     // 1. Inject JSON Content-Type if payload present
     if (options.body && !headers.has('Content-Type')) {
@@ -56,11 +66,18 @@ export class ApiClient {
       headers.set('Authorization', `Bearer ${activeKey}`);
     }
 
+    // 4. Inject CSRF Token for state-changing requests if present in active memory context
+    const csrfToken = getClientCsrfToken();
+    if (csrfToken && ['POST', 'PATCH', 'DELETE', 'PUT'].includes(method) && !headers.has('X-CSRF-Token')) {
+      headers.set('X-CSRF-Token', csrfToken);
+    }
+
     const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
 
     try {
       const response = await fetch(url, {
         ...options,
+        credentials: 'include',
         headers,
       });
 

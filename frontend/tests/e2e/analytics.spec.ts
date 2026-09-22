@@ -103,6 +103,40 @@ test.describe('Analytics & Traffic Intelligence E2E Tests', () => {
       });
     });
 
+    await page.route('**/api/v1/auth/session', async (route) => {
+      const method = route.request().method();
+      if (method === 'POST') {
+        await route.fulfill({
+          status: 201,
+          contentType: 'application/json',
+          headers: {
+            'set-cookie': 'sid=mock_sid_analytics_123; Path=/; HttpOnly; SameSite=Lax'
+          },
+          body: JSON.stringify({
+            user_id: 'user-analytics-001',
+            csrf_token: 'csrf_mock_analytics_123',
+            expires_at: new Date(Date.now() + 604800000).toISOString()
+          }),
+        });
+      } else if (method === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            authenticated: true,
+            user_id: 'user-analytics-001',
+            csrf_token: 'csrf_mock_analytics_123'
+          }),
+        });
+      } else {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ message: 'Logged out successfully' }),
+        });
+      }
+    });
+
     // 1. Authenticate via Register page in memory
     await page.goto('/register');
     await page.getByRole('button', { name: /Register Account/i }).click();

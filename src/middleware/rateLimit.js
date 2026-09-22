@@ -55,6 +55,13 @@ const rateLimitApiKeyDelete = createRateLimiter({ max: 30, message: 'Too many AP
 
 const rateLimitAnalytics = createRateLimiter({ max: 30, message: 'Too many analytics query requests' });
 
+const rateLimitSessionCreate = createRateLimiter({
+  max: 15,
+  windowMs: 60 * 1000,
+  keyGenerator: () => 'global_public_session_process_window',
+  message: 'Too many session creation requests'
+});
+
 function resetRateLimitersForTesting() {
   if (typeof rateLimitPublicRegistration.resetKey === 'function') {
     rateLimitPublicRegistration.resetKey('global_public_registration_process_window');
@@ -62,11 +69,18 @@ function resetRateLimitersForTesting() {
   if (rateLimitPublicRegistration.store && typeof rateLimitPublicRegistration.store.resetKey === 'function') {
     rateLimitPublicRegistration.store.resetKey('global_public_registration_process_window');
   }
+  if (typeof rateLimitSessionCreate.resetKey === 'function') {
+    rateLimitSessionCreate.resetKey('global_public_session_process_window');
+  }
+  if (rateLimitSessionCreate.store && typeof rateLimitSessionCreate.store.resetKey === 'function') {
+    rateLimitSessionCreate.store.resetKey('global_public_session_process_window');
+  }
 }
 
 module.exports = rateLimitLinkCreate;
 module.exports.createRateLimiter = createRateLimiter;
 module.exports.rateLimitPublicRegistration = rateLimitPublicRegistration;
+module.exports.rateLimitSessionCreate = rateLimitSessionCreate;
 module.exports.rateLimitLinkCreate = rateLimitLinkCreate;
 module.exports.rateLimitLinkQuery = rateLimitLinkQuery;
 module.exports.rateLimitLinkMutation = rateLimitLinkMutation;

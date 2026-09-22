@@ -1,19 +1,25 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
-import { setClientApiKey } from '../api/client';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { setClientApiKey, setClientCsrfToken } from '../api/client';
+import { sessionApi } from '../api/endpoints/session';
 
 /**
- * DEVELOPMENT-ONLY AUTHENTICATION CONTEXT
+ * PRODUCTION AUTHENTICATION CONTEXT (Phase 24F)
  *
- * Security Architecture Notice (Phase 24A.2 & Phase 24B Compliance):
+ * Security Architecture Notice:
  * - Browser Credential Persistence is strictly REJECTED (no localStorage, no sessionStorage).
- * - API credentials (Bearer API keys) are kept in React component state memory ONLY.
- * - Refreshing or closing the browser window intentionally clears the stored key.
- * - Production browser session/auth will be implemented via dedicated BFF/HttpOnly session cookies in future phases.
+ * - Web UI uses HttpOnly + SameSite session cookies for credential persistence.
+ * - CSRF token is kept strictly in React memory (and setClientCsrfToken).
+ * - Programmatic API key state is optional and strictly transient.
  */
 
 interface AuthContextType {
-  apiKey: string | null;
+  userId: string | null;
   isAuthenticated: boolean;
+  isLoading: boolean;
+  csrfToken: string | null;
+  apiKey: string | null;
+  login: (apiKey: string) => Promise<void>;
+  logout: () => Promise<void>;
   setApiKey: (key: string | null) => void;
   clearApiKey: () => void;
 }
@@ -25,24 +31,97 @@ export interface AuthProviderProps {
 }
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
+  const [userId, setUserId] = useState<string | null>(null);
+  const [csrfToken, setCsrfTokenState] = useState<string | null>(null);
   const [apiKey, setApiKeyInternal] = useState<string | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  const setCsrfToken = useCallback((token: string | null) => {
+    setCsrfTokenState(token);
+    setClientCsrfToken(token);
+  }, []);
 
   const setApiKey = useCallback((key: string | null) => {
     const trimmed = key ? key.trim() : null;
     setApiKeyInternal(trimmed);
     setClientApiKey(trimmed);
-  }, []);
+    if (trimmed) {
+      setIsAuthenticated(true);
+    } else if (!userId) {
+      setIsAuthenticated(false);
+    }
+  }, [userId]);
 
-  const clearApiKey = useCallback(() => {
+  // Session hydration on initial app mount
+  useEffect(() => {
+    let isMounted = true;
+    sessionApi.getSession()
+      .then((res) => {
+        if (isMounted) {
+          if (res.authenticated && res.user_id && res.csrf_token) {
+            setUserId(res.user_id);
+            setCsrfToken(res.csrf_token);
+            setIsAuthenticated(true);
+          } else {
+            setIsAuthenticated(false);
+          }
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setIsAuthenticated(false);
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [setCsrfToken]);
+
+  const login = useCallback(async (key: string) => {
+    const res = await sessionApi.createSession(key);
+    setUserId(res.user_id);
+    setCsrfToken(res.csrf_token);
+    setIsAuthenticated(true);
+    // Ensure raw key is cleared from memory context after session creation
     setApiKeyInternal(null);
     setClientApiKey(null);
-  }, []);
+  }, [setCsrfToken]);
+
+  const logout = useCallback(async () => {
+    try {
+      await sessionApi.deleteSession();
+    } catch {
+      // Ignore network errors on logout
+    } finally {
+      setUserId(null);
+      setCsrfToken(null);
+      setApiKeyInternal(null);
+      setClientApiKey(null);
+      setIsAuthenticated(false);
+    }
+  }, [setCsrfToken]);
+
+  const clearApiKey = useCallback(() => {
+    logout();
+  }, [logout]);
 
   return (
     <AuthContext.Provider
       value={{
+        userId,
+        isAuthenticated,
+        isLoading,
+        csrfToken,
         apiKey,
-        isAuthenticated: Boolean(apiKey),
+        login,
+        logout,
         setApiKey,
         clearApiKey,
       }}

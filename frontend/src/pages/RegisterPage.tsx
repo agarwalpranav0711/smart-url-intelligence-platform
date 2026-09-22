@@ -12,10 +12,11 @@ import { RegisterUserResponse } from '../api/types';
 
 export const RegisterPage: React.FC = () => {
   const [name, setName] = useState('');
+  const [existingKey, setExistingKey] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<any>(null);
   const [result, setResult] = useState<RegisterUserResponse | null>(null);
-  const { setApiKey } = useAuth();
+  const { login } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -25,7 +26,22 @@ export const RegisterPage: React.FC = () => {
     try {
       const response = await authApi.register({ name: name.trim() || 'Developer Key' });
       setResult(response);
-      setApiKey(response.api_key);
+      await login(response.api_key);
+    } catch (err) {
+      setError(err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleExistingKeySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!existingKey.trim()) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      await login(existingKey.trim());
+      navigate('/dashboard');
     } catch (err) {
       setError(err);
     } finally {
@@ -75,22 +91,44 @@ export const RegisterPage: React.FC = () => {
           </div>
         </div>
       ) : (
-        <form onSubmit={handleSubmit} className="bg-slate-900 border border-brand-border rounded-md p-6 space-y-4">
-          <Input
-            label="Key Identifier / Name"
-            placeholder="Primary Development Key"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            hint="An initial API key secret will be provisioned for your developer account."
-          />
+        <div className="space-y-6">
+          <form onSubmit={handleSubmit} className="bg-slate-900 border border-brand-border rounded-md p-6 space-y-4">
+            <h3 className="text-sm font-semibold text-slate-200">Register New Developer Identity</h3>
+            <Input
+              label="Key Identifier / Name"
+              placeholder="Primary Development Key"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              hint="An initial API key secret will be provisioned for your developer account."
+            />
 
-          <div className="pt-2 flex justify-end">
-            <Button type="submit" isLoading={isLoading} className="gap-2">
-              <Key className="w-4 h-4" />
-              Register Account & Key
-            </Button>
-          </div>
-        </form>
+            <div className="pt-2 flex justify-end">
+              <Button type="submit" isLoading={isLoading} className="gap-2">
+                <Key className="w-4 h-4" />
+                Register Account & Key
+              </Button>
+            </div>
+          </form>
+
+          <form onSubmit={handleExistingKeySubmit} className="bg-slate-900 border border-brand-border rounded-md p-6 space-y-4">
+            <h3 className="text-sm font-semibold text-slate-200">Authenticate Active Web Session</h3>
+            <Input
+              label="Existing API Key"
+              type="password"
+              placeholder="sk_live_..."
+              value={existingKey}
+              onChange={(e) => setExistingKey(e.target.value)}
+              hint="Exchange a valid API key for an HttpOnly browser session."
+            />
+
+            <div className="pt-2 flex justify-end">
+              <Button type="submit" variant="secondary" isLoading={isLoading} className="gap-2">
+                <ShieldCheck className="w-4 h-4" />
+                Establish Web Session
+              </Button>
+            </div>
+          </form>
+        </div>
       )}
     </div>
   );

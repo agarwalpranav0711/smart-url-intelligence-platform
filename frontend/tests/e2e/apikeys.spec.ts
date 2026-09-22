@@ -84,6 +84,40 @@ test.describe('API Key Management & Developer Identity E2E Tests', () => {
       }
     });
 
+    await page.route('**/api/v1/auth/session', async (route) => {
+      const method = route.request().method();
+      if (method === 'POST') {
+        await route.fulfill({
+          status: 201,
+          contentType: 'application/json',
+          headers: {
+            'set-cookie': 'sid=mock_sid_123; Path=/; HttpOnly; SameSite=Lax'
+          },
+          body: JSON.stringify({
+            user_id: 'user-initial-101',
+            csrf_token: 'csrf_mock_token_123',
+            expires_at: new Date(Date.now() + 604800000).toISOString()
+          }),
+        });
+      } else if (method === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            authenticated: true,
+            user_id: 'user-initial-101',
+            csrf_token: 'csrf_mock_token_123'
+          }),
+        });
+      } else {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ message: 'Logged out successfully' }),
+        });
+      }
+    });
+
     // 1. Authenticate via Register page in memory
     await page.goto('/register');
     await page.getByRole('button', { name: /Register Account/i }).click();
@@ -138,11 +172,12 @@ test.describe('API Key Management & Developer Identity E2E Tests', () => {
     await tableRevokeBtn2.click();
     await page.getByRole('button', { name: 'Confirm Revocation' }).click();
 
-    // 13. Verify key status changes to Revoked
+    // 13. Verify key status changes to Revoked & modal closes
+    await expect(page.getByRole('dialog')).not.toBeVisible();
     await expect(page.getByText(/Revoked \(/i)).toBeVisible();
 
     // 14. Verify Revoked status filter tab
-    await page.getByRole('button', { name: /Revoked \(1\)/i }).click();
+    await page.getByRole('button', { name: /Revoked/i }).last().click({ force: true });
     await expect(page.getByText('Secondary E2E Key')).toBeVisible();
   });
 });

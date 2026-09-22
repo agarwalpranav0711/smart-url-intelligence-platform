@@ -9,7 +9,7 @@ export interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
-  const { apiKey, clearApiKey } = useAuth();
+  const { isAuthenticated, userId, logout } = useAuth();
 
   return (
     <header className="h-14 bg-slate-950 border-b border-brand-border px-4 flex items-center justify-between sticky top-0 z-30 shrink-0">
@@ -33,19 +33,19 @@ export const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
       </div>
 
       <div className="flex items-center gap-3">
-        {/* Auth Status & Memory Key Info */}
+        {/* Auth Status & Web Session Info */}
         <div className="flex items-center gap-2 font-mono text-xs">
-          {apiKey ? (
+          {isAuthenticated ? (
             <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded px-2.5 py-1">
               <Key className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <span className="text-slate-400 hidden sm:inline">Memory Key:</span>
-              <span className="text-slate-200 font-semibold">{apiKey.substring(0, 10)}...</span>
+              <span className="text-slate-400 hidden sm:inline">Session:</span>
+              <span className="text-slate-200 font-semibold">{userId ? `${userId.substring(0, 8)}...` : 'Active'}</span>
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={clearApiKey}
+                onClick={() => logout()}
                 className="h-5 px-1 text-slate-400 hover:text-rose-400"
-                title="Clear key from memory"
+                title="Terminate web session (Logout)"
               >
                 <LogOut className="w-3 h-3" />
               </Button>
@@ -53,7 +53,7 @@ export const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
           ) : (
             <div className="flex items-center gap-2">
               <Badge variant="warning" className="text-[11px]">
-                No Auth Key
+                Unauthenticated
               </Badge>
             </div>
           )}

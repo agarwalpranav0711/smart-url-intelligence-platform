@@ -1,8 +1,10 @@
 const express = require('express');
+const cookieParser = require('cookie-parser');
 const linkRoutes = require('./routes/linkRoutes');
 const redirectRoutes = require('./routes/redirectRoutes');
 const opsRoutes = require('./routes/opsRoutes');
 const apiKeyRoutes = require('./routes/apiKeyRoutes');
+const sessionRoutes = require('./routes/sessionRoutes');
 const analyticsRoutes = require('./routes/analyticsRoutes');
 const docsRoutes = require('./routes/docsRoutes');
 const requestIdMiddleware = require('./middleware/requestId');
@@ -39,20 +41,25 @@ app.use(requestIdMiddleware);
 // 2. High-resolution request timing and structured request logging
 app.use(requestLogger);
 
-// 3. Enable JSON body parsing with strict 64 KB size limit
+// 3. Cookie parser middleware
+app.use(cookieParser());
+
+// 4. Enable JSON body parsing with strict 64 KB size limit
 app.use(express.json({ limit: '64kb' }));
 
-// 4. Register Public Operational & Documentation Routes
+// 5. Register Public Operational & Documentation Routes
 app.use('/', opsRoutes);
 app.use('/', docsRoutes);
 
-// 5. Register Public Redirect Route (GET /s/:code)
+// 6. Register Public Redirect Route (GET /s/:code)
 app.use('/', redirectRoutes);
 
-// 6. Register Authenticated API Routes & Developer Identity Endpoints
+// 7. Register Authenticated API Routes, Session & Developer Identity Endpoints
+app.use('/api/v1/auth', sessionRoutes);
 app.use('/api/v1', apiKeyRoutes);
 app.use('/api/v1', linkRoutes);
 app.use('/api/v1', analyticsRoutes);
+
 
 // 7. Unknown Route Handler (HTTP 404 JSON response for any unmapped route)
 app.use((req, res) => {
