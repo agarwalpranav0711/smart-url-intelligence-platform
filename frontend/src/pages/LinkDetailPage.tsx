@@ -13,6 +13,7 @@ import { DeactivateLinkModal } from '../components/common/DeactivateLinkModal';
 import { RoutingSummaryCard } from '../components/common/RoutingSummaryCard';
 import { TimeSeriesChart } from '../components/analytics/TimeSeriesChart';
 import { RoutingBreakdownTable } from '../components/analytics/RoutingBreakdownTable';
+import { CodeGenerator } from '../components/common/CodeGenerator';
 import { linksApi } from '../api/endpoints/links';
 import { analyticsApi } from '../api/endpoints/analytics';
 import { useAuth } from '../context/AuthContext';
@@ -255,6 +256,14 @@ export const LinkDetailPage: React.FC = () => {
               <RoutingBreakdownTable data={analyticsData.routing_breakdown || []} />
             </div>
           )}
+
+          {/* Section 5: API Usage & Developer Code Generator */}
+          <div className="space-y-2 font-mono">
+            <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              Developer API Usage
+            </div>
+            <CodeGenerator shortCode={code} initialOperation="link_analytics" />
+          </div>
 
           {/* Edit Modal */}
           <EditLinkModal

@@ -11,6 +11,7 @@ import { Modal } from '../components/common/Modal';
 import { CodeText } from '../components/common/CodeText';
 import { Badge } from '../components/common/Badge';
 import { RevokeKeyModal } from '../components/common/RevokeKeyModal';
+import { CodeGenerator } from '../components/common/CodeGenerator';
 import { apiKeysApi } from '../api/endpoints/apiKeys';
 import { useAuth } from '../context/AuthContext';
 import { formatDate } from '../utils/formatters';
@@ -325,6 +326,29 @@ export const ApiKeysPage: React.FC = () => {
           )}
         </div>
       )}
+
+      {/* Developer Integration Section: Using your API key */}
+      <div className="space-y-3 pt-4 border-t border-slate-800">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 font-mono">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-200">Using your API key</h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Programmatic HTTP clients use Bearer API keys passed in the <code className="text-sky-400">Authorization</code> header.
+              Replace <code className="text-amber-400">YOUR_API_KEY</code> with your raw key token in your application environment.
+            </p>
+          </div>
+          <a
+            href="http://localhost:3000/docs"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-sky-400 hover:text-sky-300 underline font-mono flex items-center gap-1 shrink-0"
+          >
+            Full API Docs →
+          </a>
+        </div>
+
+        <CodeGenerator initialOperation="create_link" />
+      </div>
 
       {/* Modal 1: Create Secondary API Key */}
       <Modal isOpen={createModalOpen} onClose={handleCloseCreateModal} title="Provision Secondary API Key">

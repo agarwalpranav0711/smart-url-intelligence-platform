@@ -14,6 +14,7 @@ const { runStep20OperabilityTests } = require('./step20-operability.test');
 const { runStep21AdvancedRedirectsTests } = require('./step21-advanced-redirects.test');
 const { runStep22AnalyticsTests } = require('./step22-analytics.test');
 const { runStep23HardeningTests } = require('./step23-hardening.test');
+const { runStep25OpenApiDocsTests } = require('./step25-openapi-docs.test');
 const { pool } = require('../src/config/db');
 
 async function runAllIntegrationTests() {
@@ -34,7 +35,8 @@ async function runAllIntegrationTests() {
     ['Step 20: Production Operability & Observability', runStep20OperabilityTests],
     ['Step 21: Advanced Redirect Intelligence & Traffic Controls', runStep21AdvancedRedirectsTests],
     ['Step 22: Advanced Analytics & Traffic Intelligence', runStep22AnalyticsTests],
-    ['Step 23: API & Platform Hardening', runStep23HardeningTests]
+    ['Step 23: API & Platform Hardening', runStep23HardeningTests],
+    ['Step 25: OpenAPI 3.0 Sync & Contract', runStep25OpenApiDocsTests]
   ];
 
   try {
